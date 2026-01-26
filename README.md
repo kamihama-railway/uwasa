@@ -20,7 +20,7 @@ Uwasa 是一个为高性能、高动态性场景设计的规则引擎。它实�
 ## 安装
 
 ```bash
-go get github.com/yourusername/uwasa
+go get github.com/kamihama-railway/uwasa
 ```
 
 ## 快速开始
