@@ -107,9 +107,9 @@ func TestEngineConcurrency(t *testing.T) {
 	const iterations = 1000
 	done := make(chan bool)
 
-	for i := 0; i < workers; i++ {
+	for i := range workers {
 		go func(id int) {
-			for j := 0; j < iterations; j++ {
+			for j := range iterations {
 				val := j % 2
 				vars := map[string]any{"a": val}
 				expected := "no"
@@ -131,7 +131,7 @@ func TestEngineConcurrency(t *testing.T) {
 		}(i)
 	}
 
-	for i := 0; i < workers; i++ {
+	for range workers {
 		<-done
 	}
 }
