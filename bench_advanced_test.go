@@ -105,6 +105,16 @@ func BenchmarkOptimizationComparison(b *testing.B) {
 				}
 			})
 		}
+		b.Run(sc.name+"/VM", func(b *testing.B) {
+			engine, err := NewEngineVM(sc.input)
+			if err != nil {
+				b.Fatalf("NewEngineVM error: %v", err)
+			}
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				_, _ = engine.Execute(sc.vars)
+			}
+		})
 	}
 }
 
@@ -114,6 +124,13 @@ func BenchmarkMixedTypeArithmetic(b *testing.B) {
 
 	b.Run("IntFloat", func(b *testing.B) {
 		benchmarkEngine(b, input, vars, OptBasic)
+	})
+	b.Run("IntFloat_VM", func(b *testing.B) {
+		engine, _ := NewEngineVM(input)
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			_, _ = engine.Execute(vars)
+		}
 	})
 }
 
@@ -126,6 +143,13 @@ func BenchmarkConcatBuiltin(b *testing.B) {
 	b.Run("Variables", func(b *testing.B) {
 		benchmarkEngine(b, input, vars, OptBasic)
 	})
+	b.Run("Variables_VM", func(b *testing.B) {
+		engine, _ := NewEngineVM(input)
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			_, _ = engine.Execute(vars)
+		}
+	})
 }
 
 func BenchmarkStringConcatenation(b *testing.B) {
@@ -134,5 +158,12 @@ func BenchmarkStringConcatenation(b *testing.B) {
 
 	b.Run("ConstStrings", func(b *testing.B) {
 		benchmarkEngine(b, input, vars, OptBasic)
+	})
+	b.Run("ConstStrings_VM", func(b *testing.B) {
+		engine, _ := NewEngineVM(input)
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			_, _ = engine.Execute(vars)
+		}
 	})
 }
