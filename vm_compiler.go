@@ -373,6 +373,15 @@ func (c *VMCompiler) walk(node Node) error {
 		c.emit(OpSetGlobal, c.addConstant(Value{Type: ValString, Str: n.Name.Value}))
 
 	case *CallExpression:
+		if ident, ok := n.Function.(*Identifier); ok && ident.Value == "concat" {
+			for _, arg := range n.Arguments {
+				err := c.walk(arg)
+				if err != nil { return err }
+			}
+			c.emit(OpConcat, int32(len(n.Arguments)))
+			return nil
+		}
+
 		for _, arg := range n.Arguments {
 			err := c.walk(arg)
 			if err != nil { return err }

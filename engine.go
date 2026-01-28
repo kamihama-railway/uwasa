@@ -20,8 +20,10 @@ type EngineOptions struct {
 }
 
 type Engine struct {
-	program  Expression
-	bytecode *RenderedBytecode
+	program        Expression
+	bytecode       *RenderedBytecode
+	constantResult any
+	isConstant     bool
 }
 
 func NewEngine(input string) (*Engine, error) {
@@ -54,10 +56,19 @@ func NewEngineWithOptions(input string, opts EngineOptions) (*Engine, error) {
 	}
 
 	if optimized == nil {
-		return &Engine{program: nil}, nil
+		return &Engine{program: nil, isConstant: true}, nil
 	}
 
-	return &Engine{program: optimized.(Expression)}, nil
+	engine := &Engine{program: optimized.(Expression)}
+
+	switch n := optimized.(type) {
+	case *NumberLiteral, *StringLiteral, *BooleanLiteral:
+		val, _ := Eval(n, nil)
+		engine.constantResult = val
+		engine.isConstant = true
+	}
+
+	return engine, nil
 }
 
 func NewEngineVM(input string) (*Engine, error) {
@@ -82,10 +93,19 @@ func NewEngineVMWithOptions(input string, opts EngineOptions) (*Engine, error) {
 		return nil, err
 	}
 
+	// If the resulting bytecode is just pushing a single constant, optimize it
+	if bc != nil && len(bc.Instructions) == 1 && bc.Instructions[0].Op == OpPush {
+		return &Engine{constantResult: bc.Constants[bc.Instructions[0].Arg].ToInterface(), isConstant: true}, nil
+	}
+
 	return &Engine{bytecode: bc}, nil
 }
 
 func (e *Engine) Execute(vars map[string]any) (any, error) {
+	if e.isConstant {
+		return e.constantResult, nil
+	}
+
 	ctx := NewMapContext(vars)
 	defer func() {
 		ctx.vars = nil
@@ -98,6 +118,10 @@ func (e *Engine) Execute(vars map[string]any) (any, error) {
 }
 
 func (e *Engine) ExecuteWithContext(ctx Context) (any, error) {
+	if e.isConstant {
+		return e.constantResult, nil
+	}
+
 	if e.bytecode != nil {
 		return RunVM(e.bytecode, ctx)
 	}
