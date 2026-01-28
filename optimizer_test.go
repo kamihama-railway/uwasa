@@ -23,6 +23,14 @@ func TestConstantFolding(t *testing.T) {
 		{"if true is 1 else is 2", "1"},
 		{"if false is 1 else is 2", "2"},
 		{"if 1 == 1 is " + `"yes"` + " else is " + `"no"`, "yes"},
+		{"true && a", "a"},
+		{"false && a", "false"},
+		{"true || a", "true"},
+		{"false || a", "a"},
+		{"a && true", "a"},
+		{"a || false", "a"},
+		{"true && (a = 1)", "(a = 1)"},
+		{"false && (a = 1)", "false"},
 	}
 
 	for _, tt := range tests {

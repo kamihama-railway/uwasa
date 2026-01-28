@@ -102,15 +102,32 @@ func Fold(node Node) Node {
 		// Handle Boolean logic folding
 		leftB, okLB := n.Left.(*BooleanLiteral)
 		rightB, okRB := n.Right.(*BooleanLiteral)
-		if okLB && okRB {
-			switch n.Operator {
-			case "&&":
-				return &BooleanLiteral{Value: leftB.Value && rightB.Value}
-			case "||":
-				return &BooleanLiteral{Value: leftB.Value || rightB.Value}
-			case "==":
-				return &BooleanLiteral{Value: leftB.Value == rightB.Value}
+
+		if n.Operator == "&&" {
+			if okLB {
+				if !leftB.Value {
+					return &BooleanLiteral{Value: false}
+				}
+				return n.Right
 			}
+			if okRB && rightB.Value {
+				return n.Left
+			}
+		}
+		if n.Operator == "||" {
+			if okLB {
+				if leftB.Value {
+					return &BooleanLiteral{Value: true}
+				}
+				return n.Right
+			}
+			if okRB && !rightB.Value {
+				return n.Left
+			}
+		}
+
+		if okLB && okRB && n.Operator == "==" {
+			return &BooleanLiteral{Value: leftB.Value == rightB.Value}
 		}
 
 	case *IfExpression:
