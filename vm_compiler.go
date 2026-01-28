@@ -98,6 +98,23 @@ func (c *Compiler) Compile(node Node) error {
 			if err != nil {
 				return err
 			}
+
+			// Optimization: fused compare with constant
+			if lit, ok := isLiteral(n.Right); ok {
+				constIdx := c.addConstant(lit)
+				switch n.Operator {
+				case "==": c.emit(OpEqualConst, constIdx)
+				case ">":  c.emit(OpGreaterConst, constIdx)
+				case "<":  c.emit(OpLessConst, constIdx)
+				case ">=": c.emit(OpGreaterEqualConst, constIdx)
+				case "<=": c.emit(OpLessEqualConst, constIdx)
+				default:
+					goto normalInfix
+				}
+				return nil
+			}
+
+		normalInfix:
 			err = c.Compile(n.Right)
 			if err != nil {
 				return err
@@ -180,10 +197,26 @@ func (c *Compiler) Compile(node Node) error {
 }
 
 func (c *Compiler) addConstant(obj any) int {
-	// Simple constant folding for name strings could be done here if needed,
-	// but let's just append for now.
+	for i, constant := range c.constants {
+		if constant == obj {
+			return i
+		}
+	}
 	c.constants = append(c.constants, obj)
 	return len(c.constants) - 1
+}
+
+func isLiteral(node Node) (any, bool) {
+	switch n := node.(type) {
+	case *NumberLiteral:
+		if n.IsInt { return n.Int64Value, true }
+		return n.Float64Value, true
+	case *StringLiteral:
+		return n.Value, true
+	case *BooleanLiteral:
+		return n.Value, true
+	}
+	return nil, false
 }
 
 func (c *Compiler) emit(op OpCode, operands ...int) int {
@@ -211,42 +244,103 @@ func (c *Compiler) Bytecode() *Bytecode {
 
 func (b *Bytecode) Render() *RenderedBytecode {
 	offsetToIdx := make(map[int]int)
-	var renderedIns []vmInstruction
+	type tempIns struct {
+		op   OpCode
+		args []int
+	}
+	var rawIns []tempIns
 
-	// First pass: identify instruction boundaries and map offsets to indices
 	i := 0
 	for i < len(b.Instructions) {
-		offsetToIdx[i] = len(renderedIns)
-		op := b.Instructions[i]
-		def, _ := Lookup(op)
-		renderedIns = append(renderedIns, vmInstruction{op: OpCode(op)})
-		i += 1
-		for _, w := range def.OperandWidths {
-			i += w
-		}
-	}
-	offsetToIdx[i] = len(renderedIns) // handle end of stream
-
-	// Second pass: fill in operands and re-map jumps
-	i = 0
-	idx := 0
-	for i < len(b.Instructions) {
+		offsetToIdx[i] = len(rawIns)
 		op := b.Instructions[i]
 		def, _ := Lookup(op)
 		operands, read := ReadOperands(def, b.Instructions[i+1:])
+		rawIns = append(rawIns, tempIns{op: OpCode(op), args: operands})
+		i += 1 + read
+	}
+	offsetToIdx[i] = len(rawIns)
 
-		arg := uint16(0)
-		if len(operands) > 0 {
-			if op == byte(OpJump) || op == byte(OpJumpIfFalse) || op == byte(OpJumpIfTrue) {
-				arg = uint16(offsetToIdx[operands[0]])
-			} else {
-				arg = uint16(operands[0])
+	for idx, inst := range rawIns {
+		if inst.op == OpJump || inst.op == OpJumpIfFalse || inst.op == OpJumpIfTrue {
+			rawIns[idx].args[0] = offsetToIdx[inst.args[0]]
+		}
+	}
+
+	var renderedIns []vmInstruction
+	rawToRendered := make(map[int]int)
+
+	for idx := 0; idx < len(rawIns); idx++ {
+		rawToRendered[idx] = len(renderedIns)
+		inst := rawIns[idx]
+
+		if inst.op == OpGetGlobal && idx+3 < len(rawIns) {
+			next := rawIns[idx+1]
+			nextNext := rawIns[idx+2]
+			next3 := rawIns[idx+3]
+			if next.op == OpEqualConst && nextNext.op == OpJumpIfFalse && next3.op == OpPop {
+				renderedIns = append(renderedIns, vmInstruction{
+					op:   OpFusedCompareGlobalConstJumpIfFalse,
+					arg1: uint16(inst.args[0]),
+					arg2: uint16(next.args[0]),
+					arg3: uint16(nextNext.args[0]),
+				})
+				rawToRendered[idx+1] = len(renderedIns) - 1
+				rawToRendered[idx+2] = len(renderedIns) - 1
+				rawToRendered[idx+3] = len(renderedIns) - 1
+				idx += 3
+				continue
 			}
 		}
-		renderedIns[idx].arg = arg
 
-		i += 1 + read
-		idx++
+		if inst.op == OpGetGlobal && idx+1 < len(rawIns) {
+			next := rawIns[idx+1]
+			var fused OpCode
+			switch next.op {
+			case OpAdd: fused = OpAddGlobal
+			}
+			if fused != 0 {
+				renderedIns = append(renderedIns, vmInstruction{
+					op:   fused,
+					arg1: uint16(inst.args[0]),
+				})
+				rawToRendered[idx+1] = len(renderedIns) - 1
+				idx += 1
+				continue
+			}
+		}
+
+		renderedIns = append(renderedIns, vmInstruction{
+			op: inst.op,
+		})
+		if len(inst.args) > 0 {
+			renderedIns[len(renderedIns)-1].arg1 = uint16(inst.args[0])
+		}
+		if len(inst.args) > 1 {
+			renderedIns[len(renderedIns)-1].arg2 = uint16(inst.args[1])
+		}
+		if len(inst.args) > 2 {
+			renderedIns[len(renderedIns)-1].arg3 = uint16(inst.args[2])
+		}
+	}
+	rawToRendered[len(rawIns)] = len(renderedIns)
+
+	for idx := range renderedIns {
+		inst := renderedIns[idx]
+		if inst.op == OpJump || inst.op == OpJumpIfFalse || inst.op == OpJumpIfTrue || inst.op == OpFusedCompareGlobalConstJumpIfFalse {
+			target := 0
+			if inst.op == OpFusedCompareGlobalConstJumpIfFalse {
+				target = int(inst.arg3)
+			} else {
+				target = int(inst.arg1)
+			}
+			newTarget := rawToRendered[target]
+			if inst.op == OpFusedCompareGlobalConstJumpIfFalse {
+				renderedIns[idx].arg3 = uint16(newTarget)
+			} else {
+				renderedIns[idx].arg1 = uint16(newTarget)
+			}
+		}
 	}
 
 	renderedConstants := make([]Value, len(b.Constants))

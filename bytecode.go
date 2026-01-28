@@ -32,6 +32,18 @@ const (
 	OpJumpIfTrue
 	OpCall
 	OpToBool
+	OpEqualConst
+	OpNotEqualConst
+	OpLessConst
+	OpGreaterConst
+	OpLessEqualConst
+	OpGreaterEqualConst
+	OpJumpIfFalsePop
+	OpFusedCompareGlobalConstJumpIfFalse
+	OpAddGlobal
+	OpSubGlobal
+	OpMulGlobal
+	OpDivGlobal
 )
 
 type Definition struct {
@@ -58,8 +70,20 @@ var definitions = map[OpCode]*Definition{
 	OpJump:         {"OpJump", []int{2}},
 	OpJumpIfFalse:  {"OpJumpIfFalse", []int{2}},
 	OpJumpIfTrue:   {"OpJumpIfTrue", []int{2}},
-	OpCall:         {"OpCall", []int{1}}, // 1-byte number of arguments
-	OpToBool:       {"OpToBool", []int{}},
+	OpCall:              {"OpCall", []int{1}}, // 1-byte number of arguments
+	OpToBool:            {"OpToBool", []int{}},
+	OpEqualConst:        {"OpEqualConst", []int{2}},
+	OpNotEqualConst:     {"OpNotEqualConst", []int{2}},
+	OpLessConst:         {"OpLessConst", []int{2}},
+	OpGreaterConst:      {"OpGreaterConst", []int{2}},
+	OpLessEqualConst:    {"OpLessEqualConst", []int{2}},
+	OpGreaterEqualConst: {"OpGreaterEqualConst", []int{2}},
+	OpJumpIfFalsePop:    {"OpJumpIfFalsePop", []int{2}},
+	OpFusedCompareGlobalConstJumpIfFalse: {"OpFusedCompareGlobalConstJumpIfFalse", []int{2, 2, 2}},
+	OpAddGlobal: {"OpAddGlobal", []int{2}},
+	OpSubGlobal: {"OpSubGlobal", []int{2}},
+	OpMulGlobal: {"OpMulGlobal", []int{2}},
+	OpDivGlobal: {"OpDivGlobal", []int{2}},
 }
 
 func Lookup(op byte) (*Definition, error) {

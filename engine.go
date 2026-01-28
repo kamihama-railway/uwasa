@@ -89,9 +89,7 @@ func (e *Engine) Execute(vars map[string]any) (any, error) {
 
 func (e *Engine) ExecuteWithContext(ctx Context) (any, error) {
 	if e.rendered != nil {
-		vm := NewVM(e.rendered)
-		defer vm.Free()
-		return vm.Run(ctx)
+		return RunVM(e.rendered, ctx)
 	}
 	return Eval(e.program, ctx)
 }
