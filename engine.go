@@ -7,24 +7,55 @@ import (
 	"fmt"
 )
 
+type OptimizationLevel int
+
+const (
+	OptNone OptimizationLevel = iota
+	OptBasic
+	OptAggressive
+)
+
+type EngineOptions struct {
+	OptimizationLevel OptimizationLevel
+}
+
 type Engine struct {
 	program Expression
 }
 
 func NewEngine(input string) (*Engine, error) {
+	return NewEngineWithOptions(input, EngineOptions{OptimizationLevel: OptBasic})
+}
+
+func NewEngineWithOptions(input string, opts EngineOptions) (*Engine, error) {
 	l := NewLexer(input)
 	defer lexerPool.Put(l)
 	p := NewParser(l)
 	defer parserPool.Put(p)
+
 	program := p.ParseProgram()
 	if len(p.Errors()) != 0 {
 		return nil, fmt.Errorf("parser errors: %v", p.Errors())
 	}
-	folded := Fold(program)
-	if folded == nil {
+
+	var optimized Node = program
+	if opts.OptimizationLevel >= OptBasic {
+		optimized = Fold(optimized)
+	}
+
+	if opts.OptimizationLevel >= OptAggressive {
+		ao := NewAggressiveOptimizer()
+		var err error
+		optimized, err = ao.Optimize(optimized)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if optimized == nil {
 		return &Engine{program: program}, nil
 	}
-	return &Engine{program: folded.(Expression)}, nil
+	return &Engine{program: optimized.(Expression)}, nil
 }
 
 func (e *Engine) Execute(vars map[string]any) (any, error) {
