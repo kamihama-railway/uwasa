@@ -206,14 +206,22 @@ func (c *Compiler) Compile(node Node) error {
 			}
 		}
 
+		// Specialized compilation for if (A && B) and if (A || B)
+		if n.IsSimple {
+			return c.Compile(n.Condition)
+		}
+
+		if infix, ok := n.Condition.(*InfixExpression); ok {
+			if infix.Operator == "&&" {
+				return c.compileIfAnd(n, infix)
+			} else if infix.Operator == "||" {
+				return c.compileIfOr(n, infix)
+			}
+		}
+
 		err := c.Compile(n.Condition)
 		if err != nil {
 			return err
-		}
-
-		if n.IsSimple {
-			c.emit(OpToBool)
-			return nil
 		}
 
 		jumpIfFalsePos := c.emit(OpJumpIfFalse, 9999)
@@ -265,6 +273,69 @@ func (c *Compiler) Compile(node Node) error {
 		c.emit(OpCall, len(n.Arguments))
 
 	}
+	return nil
+}
+
+func (c *Compiler) compileIfAnd(ie *IfExpression, cond *InfixExpression) error {
+	// Compile L
+	if err := c.Compile(cond.Left); err != nil { return err }
+	jumpFalseL := c.emit(OpJumpIfFalse, 9999)
+	c.emit(OpPop)
+
+	// Compile R
+	if err := c.Compile(cond.Right); err != nil { return err }
+	jumpFalseR := c.emit(OpJumpIfFalse, 9999)
+	c.emit(OpPop)
+
+	// Consequence
+	if err := c.Compile(ie.Consequence); err != nil { return err }
+	jumpEnd := c.emit(OpJump, 9999)
+
+	// False target
+	falseTarget := len(c.instructions)
+	c.changeOperand(jumpFalseL, falseTarget)
+	c.changeOperand(jumpFalseR, falseTarget)
+	c.emit(OpPop)
+
+	if ie.Alternative != nil {
+		if err := c.Compile(ie.Alternative); err != nil { return err }
+	} else {
+		c.emit(OpConstant, c.addConstant(nil))
+	}
+
+	c.changeOperand(jumpEnd, len(c.instructions))
+	return nil
+}
+
+func (c *Compiler) compileIfOr(ie *IfExpression, cond *InfixExpression) error {
+	// Compile L
+	if err := c.Compile(cond.Left); err != nil { return err }
+	jumpTrueL := c.emit(OpJumpIfTrue, 9999)
+	c.emit(OpPop)
+
+	// Compile R
+	if err := c.Compile(cond.Right); err != nil { return err }
+	jumpTrueR := c.emit(OpJumpIfTrue, 9999)
+	c.emit(OpPop)
+
+	// Alternative (Both false)
+	if ie.Alternative != nil {
+		if err := c.Compile(ie.Alternative); err != nil { return err }
+	} else {
+		c.emit(OpConstant, c.addConstant(nil))
+	}
+	jumpEnd := c.emit(OpJump, 9999)
+
+	// True target
+	trueTarget := len(c.instructions)
+	c.changeOperand(jumpTrueL, trueTarget)
+	c.changeOperand(jumpTrueR, trueTarget)
+	c.emit(OpPop)
+
+	// Consequence
+	if err := c.Compile(ie.Consequence); err != nil { return err }
+
+	c.changeOperand(jumpEnd, len(c.instructions))
 	return nil
 }
 
@@ -329,7 +400,7 @@ func (c *Compiler) changeOperand(opPos int, operand int) {
 	}
 }
 
-func (c *Bytecode) Render() *RenderedBytecode {
+func (b *Bytecode) Render() *RenderedBytecode {
 	offsetToIdx := make(map[int]int)
 	type tempIns struct {
 		op   OpCode
@@ -338,11 +409,11 @@ func (c *Bytecode) Render() *RenderedBytecode {
 	var rawIns []tempIns
 
 	i := 0
-	for i < len(c.Instructions) {
+	for i < len(b.Instructions) {
 		offsetToIdx[i] = len(rawIns)
-		op := c.Instructions[i]
+		op := b.Instructions[i]
 		def, _ := Lookup(op)
-		operands, read := ReadOperands(def, c.Instructions[i+1:])
+		operands, read := ReadOperands(def, b.Instructions[i+1:])
 		rawIns = append(rawIns, tempIns{op: OpCode(op), args: operands})
 		i += 1 + read
 	}
@@ -362,11 +433,12 @@ func (c *Bytecode) Render() *RenderedBytecode {
 		rawToRendered[idx] = len(renderedIns)
 		inst := rawIns[idx]
 
-		// Fusion: Constant(name) + OpCall -> OpCallResolved or OpConcat
-		if inst.op == OpConstant && idx+1 < len(rawIns) && rawIns[idx+1].op == OpCall {
-			constVal := c.Constants[inst.args[0]]
-			if name, ok := constVal.(string); ok {
-				numArgs := rawIns[idx+1].args[0]
+		// Optimization: Constant + BinaryOp
+		if inst.op == OpConstant && idx+1 < len(rawIns) {
+			next := rawIns[idx+1]
+			// Fusion: Constant(name) + OpCall -> OpCallResolved or OpConcat
+			if name, ok := b.Constants[inst.args[0]].(string); ok && next.op == OpCall {
+				numArgs := next.args[0]
 				if name == "concat" {
 					renderedIns = append(renderedIns, vmInstruction{
 						op:   OpConcat,
@@ -388,37 +460,13 @@ func (c *Bytecode) Render() *RenderedBytecode {
 					continue
 				}
 			}
-		}
 
-		// Fusion: GetGlobal + EqualConst + JumpIfFalse + Pop
-		if inst.op == OpGetGlobal && idx+3 < len(rawIns) {
-			next := rawIns[idx+1]
-			nextNext := rawIns[idx+2]
-			next3 := rawIns[idx+3]
-			if next.op == OpEqualConst && nextNext.op == OpJumpIfFalse && next3.op == OpPop {
-				renderedIns = append(renderedIns, vmInstruction{
-					op:   OpFusedCompareGlobalConstJumpIfFalse,
-					arg1: uint16(inst.args[0]),
-					arg2: uint16(next.args[0]),
-					arg3: uint16(nextNext.args[0]),
-				})
-				rawToRendered[idx+1] = len(renderedIns) - 1
-				rawToRendered[idx+2] = len(renderedIns) - 1
-				rawToRendered[idx+3] = len(renderedIns) - 1
-				idx += 3
-				continue
-			}
-		}
-
-		// Fusion: GetGlobal + BinaryOp
-		if inst.op == OpGetGlobal && idx+1 < len(rawIns) {
-			next := rawIns[idx+1]
 			var fused OpCode
 			switch next.op {
-			case OpAdd: fused = OpAddGlobal
-			case OpSub: fused = OpSubGlobal
-			case OpMul: fused = OpMulGlobal
-			case OpDiv: fused = OpDivGlobal
+			case OpAdd: fused = OpAddConst
+			case OpSub: fused = OpSubConst
+			case OpMul: fused = OpMulConst
+			case OpDiv: fused = OpDivConst
 			}
 			if fused != 0 {
 				renderedIns = append(renderedIns, vmInstruction{
@@ -431,15 +479,41 @@ func (c *Bytecode) Render() *RenderedBytecode {
 			}
 		}
 
-		// Fusion: Constant + BinaryOp
-		if inst.op == OpConstant && idx+1 < len(rawIns) {
+		// Fusion: GetGlobal + ...
+		if inst.op == OpGetGlobal && idx+1 < len(rawIns) {
 			next := rawIns[idx+1]
+
+			// Fused GetGlobal + CompConst + JumpIfFalse + Pop
+			if idx+3 < len(rawIns) && rawIns[idx+2].op == OpJumpIfFalse && rawIns[idx+3].op == OpPop {
+				var fused OpCode
+				switch next.op {
+				case OpEqualConst: fused = OpFusedCompareGlobalConstJumpIfFalse
+				case OpGreaterConst: fused = OpFusedGreaterGlobalConstJumpIfFalse
+				case OpLessConst: fused = OpFusedLessGlobalConstJumpIfFalse
+				case OpGreaterEqualConst: fused = OpFusedGreaterEqualGlobalConstJumpIfFalse
+				case OpLessEqualConst: fused = OpFusedLessEqualGlobalConstJumpIfFalse
+				}
+				if fused != 0 {
+					renderedIns = append(renderedIns, vmInstruction{
+						op:   fused,
+						arg1: uint16(inst.args[0]),
+						arg2: uint16(next.args[0]),
+						arg3: uint16(rawIns[idx+2].args[0]),
+					})
+					rawToRendered[idx+1] = len(renderedIns) - 1
+					rawToRendered[idx+2] = len(renderedIns) - 1
+					rawToRendered[idx+3] = len(renderedIns) - 1
+					idx += 3
+					continue
+				}
+			}
+
 			var fused OpCode
 			switch next.op {
-			case OpAdd: fused = OpAddConst
-			case OpSub: fused = OpSubConst
-			case OpMul: fused = OpMulConst
-			case OpDiv: fused = OpDivConst
+			case OpAdd: fused = OpAddGlobal
+			case OpSub: fused = OpSubGlobal
+			case OpMul: fused = OpMulGlobal
+			case OpDiv: fused = OpDivGlobal
 			}
 			if fused != 0 {
 				renderedIns = append(renderedIns, vmInstruction{
@@ -463,6 +537,39 @@ func (c *Bytecode) Render() *RenderedBytecode {
 			continue
 		}
 
+		// Fusion: BinaryConst + JumpIfFalsePop
+		if idx+1 < len(rawIns) && rawIns[idx+1].op == OpJumpIfFalsePop {
+			var fused OpCode
+			switch inst.op {
+			case OpGreaterConst: fused = OpFusedGreaterConstJumpIfFalsePop
+			case OpLessConst: fused = OpFusedLessConstJumpIfFalsePop
+			case OpGreaterEqualConst: fused = OpFusedGreaterEqualConstJumpIfFalsePop
+			case OpLessEqualConst: fused = OpFusedLessEqualConstJumpIfFalsePop
+			}
+			if fused != 0 {
+				renderedIns = append(renderedIns, vmInstruction{
+					op:   fused,
+					arg1: uint16(inst.args[0]),
+					arg2: uint16(rawIns[idx+1].args[0]),
+				})
+				rawToRendered[idx+1] = len(renderedIns) - 1
+				idx += 1
+				continue
+			}
+		}
+
+		// Optimization: Remove redundant ToBool after comparisons
+		if inst.op == OpToBool && idx > 0 {
+			prev := rawIns[idx-1]
+			switch prev.op {
+			case OpEqual, OpGreater, OpLess, OpGreaterEqual, OpLessEqual,
+				OpEqualConst, OpGreaterConst, OpLessConst, OpGreaterEqualConst, OpLessEqualConst:
+				// Skip ToBool
+				rawToRendered[idx] = len(renderedIns) - 1
+				continue
+			}
+		}
+
 		renderedIns = append(renderedIns, vmInstruction{
 			op: inst.op,
 		})
@@ -480,31 +587,55 @@ func (c *Bytecode) Render() *RenderedBytecode {
 
 	for idx := range renderedIns {
 		inst := renderedIns[idx]
-		if inst.op == OpJump || inst.op == OpJumpIfFalse || inst.op == OpJumpIfTrue || inst.op == OpJumpIfFalsePop || inst.op == OpFusedCompareGlobalConstJumpIfFalse {
+		op := inst.op
+		if op == OpJump || op == OpJumpIfFalse || op == OpJumpIfTrue || op == OpJumpIfFalsePop ||
+			op == OpFusedCompareGlobalConstJumpIfFalse ||
+			op == OpFusedGreaterGlobalConstJumpIfFalse ||
+			op == OpFusedLessGlobalConstJumpIfFalse ||
+			op == OpFusedGreaterEqualGlobalConstJumpIfFalse ||
+			op == OpFusedLessEqualGlobalConstJumpIfFalse ||
+			op == OpFusedGreaterConstJumpIfFalsePop ||
+			op == OpFusedLessConstJumpIfFalsePop ||
+			op == OpFusedGreaterEqualConstJumpIfFalsePop ||
+			op == OpFusedLessEqualConstJumpIfFalsePop {
 			target := 0
-			if inst.op == OpFusedCompareGlobalConstJumpIfFalse {
+			argIdx := 1
+			switch op {
+			case OpFusedCompareGlobalConstJumpIfFalse,
+				OpFusedGreaterGlobalConstJumpIfFalse,
+				OpFusedLessGlobalConstJumpIfFalse,
+				OpFusedGreaterEqualGlobalConstJumpIfFalse,
+				OpFusedLessEqualGlobalConstJumpIfFalse:
 				target = int(inst.arg3)
-			} else {
+				argIdx = 3
+			case OpFusedGreaterConstJumpIfFalsePop,
+				OpFusedLessConstJumpIfFalsePop,
+				OpFusedGreaterEqualConstJumpIfFalsePop,
+				OpFusedLessEqualConstJumpIfFalsePop:
+				target = int(inst.arg2)
+				argIdx = 2
+			default:
 				target = int(inst.arg1)
+				argIdx = 1
 			}
 			newTarget := rawToRendered[target]
-			if inst.op == OpFusedCompareGlobalConstJumpIfFalse {
-				renderedIns[idx].arg3 = uint16(newTarget)
-			} else {
-				renderedIns[idx].arg1 = uint16(newTarget)
+			switch argIdx {
+			case 1: renderedIns[idx].arg1 = uint16(newTarget)
+			case 2: renderedIns[idx].arg2 = uint16(newTarget)
+			case 3: renderedIns[idx].arg3 = uint16(newTarget)
 			}
 		}
 	}
 
-	renderedConstants := make([]Value, len(c.Constants))
-	for i, constant := range c.Constants {
+	renderedConstants := make([]Value, len(b.Constants))
+	for i, constant := range b.Constants {
 		renderedConstants[i] = FromAny(constant)
 	}
 
 	return &RenderedBytecode{
 		Instructions:  renderedIns,
 		Constants:     renderedConstants,
-		VariableNames: c.VariableNames,
+		VariableNames: b.VariableNames,
 		Builtins:      resolvedBuiltins,
 	}
 }

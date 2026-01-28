@@ -42,6 +42,14 @@ const (
 	OpGreaterEqualConst
 	OpJumpIfFalsePop
 	OpFusedCompareGlobalConstJumpIfFalse
+	OpFusedGreaterGlobalConstJumpIfFalse
+	OpFusedLessGlobalConstJumpIfFalse
+	OpFusedGreaterEqualGlobalConstJumpIfFalse
+	OpFusedLessEqualGlobalConstJumpIfFalse
+	OpFusedGreaterConstJumpIfFalsePop
+	OpFusedLessConstJumpIfFalsePop
+	OpFusedGreaterEqualConstJumpIfFalsePop
+	OpFusedLessEqualConstJumpIfFalsePop
 	OpAddGlobal
 	OpSubGlobal
 	OpMulGlobal
@@ -87,7 +95,15 @@ var definitions = map[OpCode]*Definition{
 	OpLessEqualConst:    {"OpLessEqualConst", []int{2}},
 	OpGreaterEqualConst: {"OpGreaterEqualConst", []int{2}},
 	OpJumpIfFalsePop:    {"OpJumpIfFalsePop", []int{2}},
-	OpFusedCompareGlobalConstJumpIfFalse: {"OpFusedCompareGlobalConstJumpIfFalse", []int{2, 2, 2}},
+	OpFusedCompareGlobalConstJumpIfFalse:      {"OpFusedCompareGlobalConstJumpIfFalse", []int{2, 2, 2}},
+	OpFusedGreaterGlobalConstJumpIfFalse:      {"OpFusedGreaterGlobalConstJumpIfFalse", []int{2, 2, 2}},
+	OpFusedLessGlobalConstJumpIfFalse:         {"OpFusedLessGlobalConstJumpIfFalse", []int{2, 2, 2}},
+	OpFusedGreaterEqualGlobalConstJumpIfFalse: {"OpFusedGreaterEqualGlobalConstJumpIfFalse", []int{2, 2, 2}},
+	OpFusedLessEqualGlobalConstJumpIfFalse:    {"OpFusedLessEqualGlobalConstJumpIfFalse", []int{2, 2, 2}},
+	OpFusedGreaterConstJumpIfFalsePop:         {"OpFusedGreaterConstJumpIfFalsePop", []int{2, 2}},
+	OpFusedLessConstJumpIfFalsePop:            {"OpFusedLessConstJumpIfFalsePop", []int{2, 2}},
+	OpFusedGreaterEqualConstJumpIfFalsePop:    {"OpFusedGreaterEqualConstJumpIfFalsePop", []int{2, 2}},
+	OpFusedLessEqualConstJumpIfFalsePop:       {"OpFusedLessEqualConstJumpIfFalsePop", []int{2, 2}},
 	OpAddGlobal: {"OpAddGlobal", []int{2}},
 	OpSubGlobal: {"OpSubGlobal", []int{2}},
 	OpMulGlobal: {"OpMulGlobal", []int{2}},

@@ -29,6 +29,9 @@ func TestVMExecution(t *testing.T) {
 		{"a && b", false, map[string]any{"a": true, "b": false}},
 		{"a || b", true, map[string]any{"a": false, "b": true}},
 		{"a || b", false, map[string]any{"a": false, "b": false}},
+		{`if (a + b) * (c - d) > 100 && e == "test" then f = 1`, int64(1), map[string]any{
+			"a": int64(50), "b": int64(60), "c": int64(10), "d": int64(5), "e": "test",
+		}},
 	}
 
 	for _, tt := range tests {
