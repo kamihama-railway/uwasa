@@ -3,7 +3,10 @@
 
 package uwasa
 
-import "fmt"
+import (
+	"fmt"
+	"math"
+)
 
 type VMCompiler struct {
 	instructions []vmInstruction
@@ -23,10 +26,145 @@ func (c *VMCompiler) Compile(node Node) (*RenderedBytecode, error) {
 	if err != nil {
 		return nil, err
 	}
+	c.peephole()
 	return &RenderedBytecode{
 		Instructions: c.instructions,
 		Constants:    c.constants,
 	}, nil
+}
+
+func (c *VMCompiler) peephole() {
+	if len(c.instructions) < 2 {
+		return
+	}
+
+	newInsts := make([]vmInstruction, 0, len(c.instructions))
+	oldToNew := make([]int, len(c.instructions)+1)
+
+	for i := 0; i < len(c.instructions); i++ {
+		oldToNew[i] = len(newInsts)
+		inst := c.instructions[i]
+
+		// 3-instruction fusion: GetGlobal + Push + Equal/Greater/Less + JumpIfFalse
+		if i+3 < len(c.instructions) &&
+			inst.Op == OpGetGlobal &&
+			c.instructions[i+1].Op == OpPush &&
+			(c.instructions[i+2].Op == OpEqual || c.instructions[i+2].Op == OpGreater || c.instructions[i+2].Op == OpLess) &&
+			c.instructions[i+3].Op == OpJumpIfFalse {
+
+			gIdx := inst.Arg
+			cIdx := c.instructions[i+1].Arg
+			jTarget := c.instructions[i+3].Arg
+
+			if gIdx < 1024 && cIdx < 1024 && jTarget < 4096 && c.instructions[i+2].Op == OpEqual {
+				fusedArg := (gIdx << 22) | (cIdx << 12) | jTarget
+				newInsts = append(newInsts, vmInstruction{Op: OpFusedCompareGlobalConstJumpIfFalse, Arg: fusedArg})
+				oldToNew[i+1] = len(newInsts) - 1
+				oldToNew[i+2] = len(newInsts) - 1
+				oldToNew[i+3] = len(newInsts) - 1
+				i += 3
+				continue
+			}
+		}
+
+		// 2-instruction fusion
+		if i+2 < len(c.instructions) &&
+			inst.Op == OpGetGlobal &&
+			c.instructions[i+1].Op == OpPush {
+
+			gIdx := inst.Arg
+			cIdx := c.instructions[i+1].Arg
+
+			if gIdx < 65536 && cIdx < 65536 {
+				// GetGlobal + Push + Add -> AddGlobal
+				if c.instructions[i+2].Op == OpAdd {
+					newInsts = append(newInsts, vmInstruction{Op: OpAddGlobal, Arg: (cIdx << 16) | gIdx})
+					oldToNew[i+1] = len(newInsts) - 1
+					oldToNew[i+2] = len(newInsts) - 1
+					i += 2
+					continue
+				}
+
+				// GetGlobal + Push + Compare -> CompareGlobalConst
+				op := OpCode(0)
+				switch c.instructions[i+2].Op {
+				case OpEqual: op = OpEqualGlobalConst
+				case OpGreater: op = OpGreaterGlobalConst
+				case OpLess: op = OpLessGlobalConst
+				}
+
+				if op != 0 {
+					newInsts = append(newInsts, vmInstruction{Op: op, Arg: (gIdx << 16) | cIdx})
+					oldToNew[i+1] = len(newInsts) - 1
+					oldToNew[i+2] = len(newInsts) - 1
+					i += 2
+					continue
+				}
+			}
+		}
+
+		// 3-instruction fusion: GetGlobal + GetGlobal + Add -> AddGlobalGlobal
+		if i+2 < len(c.instructions) &&
+			inst.Op == OpGetGlobal &&
+			c.instructions[i+1].Op == OpGetGlobal &&
+			c.instructions[i+2].Op == OpAdd {
+
+			g1Idx := inst.Arg
+			g2Idx := c.instructions[i+1].Arg
+			if g1Idx < 65536 && g2Idx < 65536 {
+				newInsts = append(newInsts, vmInstruction{Op: OpAddGlobalGlobal, Arg: (g1Idx << 16) | g2Idx})
+				oldToNew[i+1] = len(newInsts) - 1
+				oldToNew[i+2] = len(newInsts) - 1
+				i += 2
+				continue
+			}
+		}
+
+		// 2-instruction fusion: GetGlobal + JumpIfFalse/True
+		if i+1 < len(c.instructions) &&
+			inst.Op == OpGetGlobal {
+
+			gIdx := inst.Arg
+			jTarget := c.instructions[i+1].Arg
+
+			if gIdx < 65536 && jTarget < 65536 {
+				op := OpCode(0)
+				switch c.instructions[i+1].Op {
+				case OpJumpIfFalse: op = OpGetGlobalJumpIfFalse
+				case OpJumpIfTrue: op = OpGetGlobalJumpIfTrue
+				}
+
+				if op != 0 {
+					newInsts = append(newInsts, vmInstruction{Op: op, Arg: (gIdx << 16) | jTarget})
+					oldToNew[i+1] = len(newInsts) - 1
+					i += 1
+					continue
+				}
+			}
+		}
+
+		newInsts = append(newInsts, inst)
+	}
+	oldToNew[len(c.instructions)] = len(newInsts)
+
+	// Fix jump targets
+	for i := range newInsts {
+		switch newInsts[i].Op {
+		case OpJump, OpJumpIfFalse, OpJumpIfTrue:
+			newInsts[i].Arg = int32(oldToNew[newInsts[i].Arg])
+		case OpFusedCompareGlobalConstJumpIfFalse:
+			gIdx := (newInsts[i].Arg >> 22) & 0x3FF
+			cIdx := (newInsts[i].Arg >> 12) & 0x3FF
+			jTarget := newInsts[i].Arg & 0xFFF
+			newInsts[i].Arg = (gIdx << 22) | (cIdx << 12) | int32(oldToNew[jTarget])
+		case OpGetGlobalJumpIfFalse, OpGetGlobalJumpIfTrue:
+			gIdx := newInsts[i].Arg >> 16
+			jTarget := newInsts[i].Arg & 0xFFFF
+			newInsts[i].Arg = (gIdx << 16) | int32(oldToNew[jTarget])
+		}
+	}
+
+	c.instructions = newInsts
 }
 
 func (c *VMCompiler) CompileOptimized(node Node, opts EngineOptions) (*RenderedBytecode, error) {
@@ -36,7 +174,6 @@ func (c *VMCompiler) CompileOptimized(node Node, opts EngineOptions) (*RenderedB
 	}
 
 	if opts.UseRecompiler {
-		// Use a dedicated VM optimization pass that also does static analysis
 		var err error
 		optimized, err = c.optimize(optimized)
 		if err != nil {
@@ -48,7 +185,6 @@ func (c *VMCompiler) CompileOptimized(node Node, opts EngineOptions) (*RenderedB
 }
 
 func (c *VMCompiler) optimize(node Node) (Node, error) {
-	// Integrated VM optimizer (similar to Recompiler but specifically for VM path)
 	res := c.simplify(node)
 	if len(c.errors) > 0 {
 		return nil, fmt.Errorf("VM static analysis errors: %v", c.errors)
@@ -72,7 +208,6 @@ func (c *VMCompiler) simplify(node Node) Node {
 		n.Right = c.simplify(n.Right).(Expression)
 		c.checkTypeMismatch(n)
 
-		// Algebraic simplification
 		switch n.Operator {
 		case "+":
 			if isZero(n.Left) { return n.Right }
@@ -137,23 +272,22 @@ func (c *VMCompiler) checkTypeMismatch(ie *InfixExpression) {
 func (c *VMCompiler) walk(node Node) error {
 	switch n := node.(type) {
 	case *Identifier:
-		c.emit(OpGetGlobal, c.addConstant(Value{Type: ValString, String: n.Value}))
+		c.emit(OpGetGlobal, c.addConstant(Value{Type: ValString, Str: n.Value}))
 	case *NumberLiteral:
 		if n.IsInt {
-			c.emit(OpPush, c.addConstant(Value{Type: ValInt, Int: n.Int64Value}))
+			c.emit(OpPush, c.addConstant(Value{Type: ValInt, Num: uint64(n.Int64Value)}))
 		} else {
-			c.emit(OpPush, c.addConstant(Value{Type: ValFloat, Float: n.Float64Value}))
+			c.emit(OpPush, c.addConstant(Value{Type: ValFloat, Num: math.Float64bits(n.Float64Value)}))
 		}
 	case *StringLiteral:
-		c.emit(OpPush, c.addConstant(Value{Type: ValString, String: n.Value}))
+		c.emit(OpPush, c.addConstant(Value{Type: ValString, Str: n.Value}))
 	case *BooleanLiteral:
-		c.emit(OpPush, c.addConstant(Value{Type: ValBool, Bool: n.Value}))
+		val := uint64(0)
+		if n.Value { val = 1 }
+		c.emit(OpPush, c.addConstant(Value{Type: ValBool, Num: val}))
 	case *PrefixExpression:
 		if n.Operator == "-" {
-			// -x is 0 - x or we can have a dedicated OpNeg. Let's use Push 0 and Sub for simplicity or OpPush -Val.
-			// Actually let's just push 0 and sub if it's numeric literal, or better, implement OpSub.
-			// For -Identifier, we need to push 0 then the identifier then sub.
-			c.emit(OpPush, c.addConstant(Value{Type: ValInt, Int: 0}))
+			c.emit(OpPush, c.addConstant(Value{Type: ValInt, Num: 0}))
 			err := c.walk(n.Right)
 			if err != nil { return err }
 			c.emit(OpSub, 0)
@@ -173,7 +307,7 @@ func (c *VMCompiler) walk(node Node) error {
 			c.emit(OpNot, 0)
 			jumpEnd := c.emit(OpJump, 0)
 			c.patch(jumpFalse, int32(len(c.instructions)))
-			c.emit(OpPush, c.addConstant(Value{Type: ValBool, Bool: false}))
+			c.emit(OpPush, c.addConstant(Value{Type: ValBool, Num: 0}))
 			c.patch(jumpEnd, int32(len(c.instructions)))
 			return nil
 		}
@@ -187,7 +321,7 @@ func (c *VMCompiler) walk(node Node) error {
 			c.emit(OpNot, 0)
 			jumpEnd := c.emit(OpJump, 0)
 			c.patch(jumpTrue, int32(len(c.instructions)))
-			c.emit(OpPush, c.addConstant(Value{Type: ValBool, Bool: true}))
+			c.emit(OpPush, c.addConstant(Value{Type: ValBool, Num: 1}))
 			c.patch(jumpEnd, int32(len(c.instructions)))
 			return nil
 		}
@@ -215,7 +349,7 @@ func (c *VMCompiler) walk(node Node) error {
 		if err != nil { return err }
 
 		if n.IsSimple {
-			return nil // Result is already on stack from condition
+			return nil
 		}
 
 		jumpFalse := c.emit(OpJumpIfFalse, 0)
@@ -236,7 +370,7 @@ func (c *VMCompiler) walk(node Node) error {
 	case *AssignExpression:
 		err := c.walk(n.Value)
 		if err != nil { return err }
-		c.emit(OpSetGlobal, c.addConstant(Value{Type: ValString, String: n.Name.Value}))
+		c.emit(OpSetGlobal, c.addConstant(Value{Type: ValString, Str: n.Name.Value}))
 
 	case *CallExpression:
 		for _, arg := range n.Arguments {
@@ -244,7 +378,7 @@ func (c *VMCompiler) walk(node Node) error {
 			if err != nil { return err }
 		}
 		if ident, ok := n.Function.(*Identifier); ok {
-			c.emit(OpCall, c.addConstant(Value{Type: ValString, String: ident.Value}))
+			c.emit(OpCall, c.addConstant(Value{Type: ValString, Str: ident.Value}))
 			c.instructions[len(c.instructions)-1].Arg |= int32(len(n.Arguments)) << 16
 		} else {
 			return fmt.Errorf("calling non-identifier functions not supported in VM yet")
@@ -256,10 +390,10 @@ func (c *VMCompiler) walk(node Node) error {
 func (c *VMCompiler) addConstant(v Value) int32 {
 	var key any
 	switch v.Type {
-	case ValInt: key = v.Int
-	case ValFloat: key = v.Float
-	case ValBool: key = v.Bool
-	case ValString: key = v.String
+	case ValInt: key = int64(v.Num)
+	case ValFloat: key = math.Float64frombits(v.Num)
+	case ValBool: key = v.Num != 0
+	case ValString: key = v.Str
 	case ValNil: key = nil
 	}
 	if idx, ok := c.constMap[key]; ok {
