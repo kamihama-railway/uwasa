@@ -89,6 +89,10 @@ func (e *Engine) Execute(vars map[string]any) (any, error) {
 
 func (e *Engine) ExecuteWithContext(ctx Context) (any, error) {
 	if e.rendered != nil {
+		// Fast path for constant-only programs
+		if len(e.rendered.Instructions) == 1 && e.rendered.Instructions[0].op == OpConstant {
+			return e.rendered.Constants[e.rendered.Instructions[0].arg1].ToAny(), nil
+		}
 		return RunVM(e.rendered, ctx)
 	}
 	return Eval(e.program, ctx)

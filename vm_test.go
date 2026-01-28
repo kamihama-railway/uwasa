@@ -32,7 +32,7 @@ func TestVMExecution(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		engine, err := NewEngineWithOptions(tt.input, EngineOptions{UseVM: true})
+		engine, err := NewEngineWithOptions(tt.input, EngineOptions{UseVM: true, OptimizationLevel: OptBasic})
 		if err != nil {
 			t.Errorf("input %s: NewEngineWithOptions failed: %v", tt.input, err)
 			continue
@@ -46,9 +46,6 @@ func TestVMExecution(t *testing.T) {
 
 		if got != tt.expected {
 			t.Errorf("input %s: expected %v, got %v", tt.input, tt.expected, got)
-			if engine.bytecode != nil {
-				t.Logf("Instructions:\n%s", engine.bytecode.Instructions.String())
-			}
 		}
 
 		if tt.input == "a = 100" {

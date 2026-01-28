@@ -4,8 +4,15 @@
 package uwasa
 
 import (
+	"bytes"
 	"fmt"
 	"math"
+)
+
+var (
+	vmTrue  any = true
+	vmFalse any = false
+	vmNil   any = nil
 )
 
 type valKind byte
@@ -32,13 +39,16 @@ func (v Value) ToAny() any {
 	case valFloat:
 		return math.Float64frombits(v.num)
 	case valBool:
-		return v.num != 0
+		if v.num != 0 {
+			return vmTrue
+		}
+		return vmFalse
 	case valString:
 		return v.ptr.(string)
 	case valAny:
 		return v.ptr
 	default:
-		return nil
+		return vmNil
 	}
 }
 
@@ -76,6 +86,15 @@ type RenderedBytecode struct {
 	Instructions  []vmInstruction
 	Constants     []Value
 	VariableNames []string
+	Builtins      []BuiltinFunc
+}
+
+func (rb *RenderedBytecode) String() string {
+	var out string
+	for i, ins := range rb.Instructions {
+		out += fmt.Sprintf("%04d %v arg1:%d arg2:%d arg3:%d\n", i, definitions[ins.op].Name, ins.arg1, ins.arg2, ins.arg3)
+	}
+	return out
 }
 
 func RunVM(rendered *RenderedBytecode, ctx Context) (any, error) {
@@ -385,6 +404,45 @@ func RunVM(rendered *RenderedBytecode, ctx Context) (any, error) {
 			res, err := builtin(args...)
 			if err != nil { return nil, err }
 			stack[sp] = FromAny(res); sp++
+
+		case OpCallResolved:
+			numArgs := int(inst.arg1)
+			builtin := rendered.Builtins[inst.arg2]
+			var staticArgs [8]any
+			var args []any
+			if numArgs <= 8 { args = staticArgs[:numArgs] } else { args = make([]any, numArgs) }
+			for i := numArgs - 1; i >= 0; i-- { args[i] = stack[sp-1].ToAny(); sp-- }
+			res, err := builtin(args...)
+			if err != nil { return nil, err }
+			stack[sp] = FromAny(res); sp++
+
+		case OpConcat:
+			numArgs := int(inst.arg1)
+			var argStrings [16]string
+			var ss []string
+			if numArgs <= 16 { ss = argStrings[:numArgs] } else { ss = make([]string, numArgs) }
+			totalLen := 0
+			for i := numArgs - 1; i >= 0; i-- {
+				v := stack[sp-1]; sp--
+				var s string
+				switch v.kind {
+				case valString: s = v.ptr.(string)
+				case valInt: s = fmt.Sprintf("%d", int64(v.num))
+				case valFloat: s = fmt.Sprintf("%g", math.Float64frombits(v.num))
+				case valBool: s = fmt.Sprintf("%v", v.num != 0)
+				case valNil: s = "nil"
+				default: s = fmt.Sprintf("%v", v.ptr)
+				}
+				ss[i] = s
+				totalLen += len(s)
+			}
+			buf := bufferPool.Get().(*bytes.Buffer)
+			buf.Reset()
+			buf.Grow(totalLen)
+			for _, s := range ss { buf.WriteString(s) }
+			res := buf.String()
+			bufferPool.Put(buf)
+			stack[sp] = Value{kind: valString, ptr: res}; sp++
 
 		case OpFusedCompareGlobalConstJumpIfFalse:
 			l := vars[inst.arg1]; r := consts[inst.arg2]

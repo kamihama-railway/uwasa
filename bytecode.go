@@ -31,6 +31,8 @@ const (
 	OpJumpIfFalse
 	OpJumpIfTrue
 	OpCall
+	OpCallResolved
+	OpConcat
 	OpToBool
 	OpEqualConst
 	OpNotEqualConst
@@ -75,6 +77,8 @@ var definitions = map[OpCode]*Definition{
 	OpJumpIfFalse:  {"OpJumpIfFalse", []int{2}},
 	OpJumpIfTrue:   {"OpJumpIfTrue", []int{2}},
 	OpCall:              {"OpCall", []int{1}}, // 1-byte number of arguments
+	OpCallResolved:      {"OpCallResolved", []int{1, 2}}, // 1-byte numArgs, 2-byte index to builtins
+	OpConcat:            {"OpConcat", []int{1}},          // 1-byte number of arguments
 	OpToBool:            {"OpToBool", []int{}},
 	OpEqualConst:        {"OpEqualConst", []int{2}},
 	OpNotEqualConst:     {"OpNotEqualConst", []int{2}},

@@ -72,6 +72,46 @@ func (c *Compiler) Compile(node Node) error {
 		}
 
 	case *InfixExpression:
+		// Algebraic simplifications (inspired by Recompiler)
+		switch n.Operator {
+		case "+":
+			if isZero(n.Left) { return c.Compile(n.Right) }
+			if isZero(n.Right) { return c.Compile(n.Left) }
+			// Optimization: Detect string concatenation chain
+			if isStringChain(n) {
+				args := collectConcatArgs(n)
+				for _, arg := range args {
+					if err := c.Compile(arg); err != nil { return err }
+				}
+				c.emit(OpConcat, len(args))
+				return nil
+			}
+		case "-":
+			if isZero(n.Right) { return c.Compile(n.Left) }
+			if isSameIdentifier(n.Left, n.Right) {
+				c.emit(OpConstant, c.addConstant(int64(0)))
+				return nil
+			}
+		case "*":
+			if isZero(n.Left) || isZero(n.Right) {
+				c.emit(OpConstant, c.addConstant(int64(0)))
+				return nil
+			}
+			if isOne(n.Left) { return c.Compile(n.Right) }
+			if isOne(n.Right) { return c.Compile(n.Left) }
+		case "==":
+			if isSameIdentifier(n.Left, n.Right) {
+				c.emit(OpConstant, c.addConstant(true))
+				return nil
+			}
+		case "/":
+			if isOne(n.Right) { return c.Compile(n.Left) }
+			if isSameIdentifier(n.Left, n.Right) && !hasSideEffects(n.Left) {
+				c.emit(OpConstant, c.addConstant(int64(1)))
+				return nil
+			}
+		}
+
 		if n.Operator == "&&" {
 			err := c.Compile(n.Left)
 			if err != nil {
@@ -154,6 +194,18 @@ func (c *Compiler) Compile(node Node) error {
 		}
 
 	case *IfExpression:
+		// Static condition evaluation
+		if lit, ok := n.Condition.(*BooleanLiteral); ok {
+			if lit.Value {
+				return c.Compile(n.Consequence)
+			} else if n.Alternative != nil {
+				return c.Compile(n.Alternative)
+			} else {
+				c.emit(OpConstant, c.addConstant(nil))
+				return nil
+			}
+		}
+
 		err := c.Compile(n.Condition)
 		if err != nil {
 			return err
@@ -189,6 +241,9 @@ func (c *Compiler) Compile(node Node) error {
 		c.changeOperand(jumpEndPos, len(c.instructions))
 
 	case *AssignExpression:
+		if isSameIdentifier(n.Name, n.Value) {
+			return c.Compile(n.Name)
+		}
 		err := c.Compile(n.Value)
 		if err != nil {
 			return err
@@ -211,6 +266,28 @@ func (c *Compiler) Compile(node Node) error {
 
 	}
 	return nil
+}
+
+func isStringChain(ie *InfixExpression) bool {
+	if ie.Operator != "+" { return false }
+	// If any side is a string literal, we consider it a string chain.
+	if _, ok := ie.Left.(*StringLiteral); ok { return true }
+	if _, ok := ie.Right.(*StringLiteral); ok { return true }
+	// If any side is another string chain, it's also a string chain.
+	if leftIE, ok := ie.Left.(*InfixExpression); ok && isStringChain(leftIE) { return true }
+	if rightIE, ok := ie.Right.(*InfixExpression); ok && isStringChain(rightIE) { return true }
+	return false
+}
+
+func collectConcatArgs(node Node) []Node {
+	ie, ok := node.(*InfixExpression)
+	if !ok || ie.Operator != "+" {
+		return []Node{node}
+	}
+	var args []Node
+	args = append(args, collectConcatArgs(ie.Left)...)
+	args = append(args, collectConcatArgs(ie.Right)...)
+	return args
 }
 
 func (c *Compiler) addConstant(obj any) int {
@@ -252,15 +329,7 @@ func (c *Compiler) changeOperand(opPos int, operand int) {
 	}
 }
 
-func (c *Compiler) Bytecode() *Bytecode {
-	return &Bytecode{
-		Instructions:  c.instructions,
-		Constants:     c.constants,
-		VariableNames: c.variableNames,
-	}
-}
-
-func (b *Bytecode) Render() *RenderedBytecode {
+func (c *Bytecode) Render() *RenderedBytecode {
 	offsetToIdx := make(map[int]int)
 	type tempIns struct {
 		op   OpCode
@@ -269,11 +338,11 @@ func (b *Bytecode) Render() *RenderedBytecode {
 	var rawIns []tempIns
 
 	i := 0
-	for i < len(b.Instructions) {
+	for i < len(c.Instructions) {
 		offsetToIdx[i] = len(rawIns)
-		op := b.Instructions[i]
+		op := c.Instructions[i]
 		def, _ := Lookup(op)
-		operands, read := ReadOperands(def, b.Instructions[i+1:])
+		operands, read := ReadOperands(def, c.Instructions[i+1:])
 		rawIns = append(rawIns, tempIns{op: OpCode(op), args: operands})
 		i += 1 + read
 	}
@@ -287,10 +356,39 @@ func (b *Bytecode) Render() *RenderedBytecode {
 
 	var renderedIns []vmInstruction
 	rawToRendered := make(map[int]int)
+	var resolvedBuiltins []BuiltinFunc
 
 	for idx := 0; idx < len(rawIns); idx++ {
 		rawToRendered[idx] = len(renderedIns)
 		inst := rawIns[idx]
+
+		// Fusion: Constant(name) + OpCall -> OpCallResolved or OpConcat
+		if inst.op == OpConstant && idx+1 < len(rawIns) && rawIns[idx+1].op == OpCall {
+			constVal := c.Constants[inst.args[0]]
+			if name, ok := constVal.(string); ok {
+				numArgs := rawIns[idx+1].args[0]
+				if name == "concat" {
+					renderedIns = append(renderedIns, vmInstruction{
+						op:   OpConcat,
+						arg1: uint16(numArgs),
+					})
+					rawToRendered[idx+1] = len(renderedIns) - 1
+					idx += 1
+					continue
+				}
+				if builtin, ok := builtins[name]; ok {
+					resolvedBuiltins = append(resolvedBuiltins, builtin)
+					renderedIns = append(renderedIns, vmInstruction{
+						op:   OpCallResolved,
+						arg1: uint16(numArgs),
+						arg2: uint16(len(resolvedBuiltins) - 1),
+					})
+					rawToRendered[idx+1] = len(renderedIns) - 1
+					idx += 1
+					continue
+				}
+			}
+		}
 
 		// Fusion: GetGlobal + EqualConst + JumpIfFalse + Pop
 		if inst.op == OpGetGlobal && idx+3 < len(rawIns) {
@@ -398,14 +496,23 @@ func (b *Bytecode) Render() *RenderedBytecode {
 		}
 	}
 
-	renderedConstants := make([]Value, len(b.Constants))
-	for i, c := range b.Constants {
-		renderedConstants[i] = FromAny(c)
+	renderedConstants := make([]Value, len(c.Constants))
+	for i, constant := range c.Constants {
+		renderedConstants[i] = FromAny(constant)
 	}
 
 	return &RenderedBytecode{
 		Instructions:  renderedIns,
 		Constants:     renderedConstants,
-		VariableNames: b.VariableNames,
+		VariableNames: c.VariableNames,
+		Builtins:      resolvedBuiltins,
+	}
+}
+
+func (c *Compiler) Bytecode() *Bytecode {
+	return &Bytecode{
+		Instructions:  c.instructions,
+		Constants:     c.constants,
+		VariableNames: c.variableNames,
 	}
 }
