@@ -83,19 +83,26 @@ func BenchmarkOptimizationComparison(b *testing.B) {
 		},
 	}
 
-	levels := []struct {
-		name  string
-		level OptimizationLevel
+	configs := []struct {
+		name string
+		opts EngineOptions
 	}{
-		{"None", OptNone},
-		{"Basic", OptBasic},
-		{"Aggressive", OptAggressive},
+		{"None", EngineOptions{OptimizationLevel: OptNone}},
+		{"Basic", EngineOptions{OptimizationLevel: OptBasic}},
+		{"Recompiled", EngineOptions{OptimizationLevel: OptBasic, UseRecompiler: true}},
 	}
 
 	for _, sc := range scenarios {
-		for _, lv := range levels {
-			b.Run(sc.name+"/"+lv.name, func(b *testing.B) {
-				benchmarkEngine(b, sc.input, sc.vars, lv.level)
+		for _, cfg := range configs {
+			b.Run(sc.name+"/"+cfg.name, func(b *testing.B) {
+				engine, err := NewEngineWithOptions(sc.input, cfg.opts)
+				if err != nil {
+					b.Fatalf("NewEngine error: %v", err)
+				}
+				b.ResetTimer()
+				for i := 0; i < b.N; i++ {
+					_, _ = engine.Execute(sc.vars)
+				}
 			})
 		}
 	}

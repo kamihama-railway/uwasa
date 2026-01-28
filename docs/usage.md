@@ -109,7 +109,7 @@ engine.ExecuteWithContext(&MyContext{})
 
 2. **选择合适的优化等级**:
    - `OptBasic` (默认): 适用于大多数场景，提供常量折叠。
-   - `OptAggressive`: 适用于规则中包含大量代数冗余或需要静态检查的场景。
+   - `UseRecompiler`: 适用于规则中包含大量代数冗余或需要严格静态检查的场景。
 
 3. **数值类型提示**:
    为了触发“快速路径”，请尽量在传入 `vars` 时使用 `int64`。

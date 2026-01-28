@@ -58,9 +58,9 @@ func BenchmarkEngineExecute_OptBasic(b *testing.B) {
 	}
 }
 
-func BenchmarkEngineExecute_OptAggressive(b *testing.B) {
+func BenchmarkEngineExecute_Recompiled(b *testing.B) {
 	input := `if a == 0 is "yes" else if a == 1 is "ok" else is "bad"`
-	engine, _ := NewEngineWithOptions(input, EngineOptions{OptimizationLevel: OptAggressive})
+	engine, _ := NewEngineWithOptions(input, EngineOptions{OptimizationLevel: OptBasic, UseRecompiler: true})
 	vars := map[string]any{"a": 1}
 
 	b.ResetTimer()
@@ -115,9 +115,9 @@ func BenchmarkEngineExecuteWithContext_OptBasic(b *testing.B) {
 	}
 }
 
-func BenchmarkEngineExecuteWithContext_OptAggressive(b *testing.B) {
+func BenchmarkEngineExecuteWithContext_Recompiled(b *testing.B) {
 	input := `if a == 0 is "yes" else if a == 1 is "ok" else is "bad"`
-	engine, _ := NewEngineWithOptions(input, EngineOptions{OptimizationLevel: OptAggressive})
+	engine, _ := NewEngineWithOptions(input, EngineOptions{OptimizationLevel: OptBasic, UseRecompiler: true})
 	ctx := &benchContext{vars: map[string]any{"a": 1}}
 
 	b.ResetTimer()
@@ -165,9 +165,9 @@ func BenchmarkComplexExpression_OptBasic(b *testing.B) {
 	}
 }
 
-func BenchmarkComplexExpression_OptAggressive(b *testing.B) {
+func BenchmarkComplexExpression_Recompiled(b *testing.B) {
 	input := `if (a + b) * (c - d) > 100 && e == "test" then f = 1`
-	engine, _ := NewEngineWithOptions(input, EngineOptions{OptimizationLevel: OptAggressive})
+	engine, _ := NewEngineWithOptions(input, EngineOptions{OptimizationLevel: OptBasic, UseRecompiler: true})
 	vars := map[string]any{
 		"a": int64(50), "b": int64(60), "c": int64(10), "d": int64(5), "e": "test",
 	}

@@ -12,11 +12,11 @@ type OptimizationLevel int
 const (
 	OptNone OptimizationLevel = iota
 	OptBasic
-	OptAggressive
 )
 
 type EngineOptions struct {
 	OptimizationLevel OptimizationLevel
+	UseRecompiler     bool
 }
 
 type Engine struct {
@@ -43,10 +43,10 @@ func NewEngineWithOptions(input string, opts EngineOptions) (*Engine, error) {
 		optimized = Fold(optimized)
 	}
 
-	if opts.OptimizationLevel >= OptAggressive {
-		ao := NewAggressiveOptimizer()
+	if opts.UseRecompiler {
+		re := NewRecompiler()
 		var err error
-		optimized, err = ao.Optimize(optimized)
+		optimized, err = re.Optimize(optimized)
 		if err != nil {
 			return nil, err
 		}

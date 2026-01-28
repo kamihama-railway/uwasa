@@ -4,7 +4,7 @@ import (
 	"testing"
 )
 
-func TestAggressiveOptimizer(t *testing.T) {
+func TestRecompiler(t *testing.T) {
 	tests := []struct {
 		input    string
 		expected string
@@ -19,11 +19,12 @@ func TestAggressiveOptimizer(t *testing.T) {
 		{"a / 1", "a"},
 		{"a - a", "0"},
 		{"a == a", "true"},
+		{"a = a", "a"},
 		{"(a + b) - (a + b)", "((a + b) - (a + b))"}, // Should not simplify complex expressions for now to avoid side effect issues
 	}
 
 	for _, tt := range tests {
-		engine, err := NewEngineWithOptions(tt.input, EngineOptions{OptimizationLevel: OptAggressive})
+		engine, err := NewEngineWithOptions(tt.input, EngineOptions{UseRecompiler: true})
 		if err != nil {
 			t.Fatalf("input %q: NewEngine error: %v", tt.input, err)
 		}
@@ -44,10 +45,12 @@ func TestStaticAnalysis(t *testing.T) {
 		{"- \"hello\"", "invalid operation: -string"},
 		{"1 + \"hello\"", "invalid operation: string + number mismatch"},
 		{"\"hello\" * 2", "invalid operation: string * string/number"},
+		{"true + 1", "invalid operation: boolean + any"},
+		{"true && 1", "invalid logic operation: && used with non-boolean literal"},
 	}
 
 	for _, tt := range tests {
-		_, err := NewEngineWithOptions(tt.input, EngineOptions{OptimizationLevel: OptAggressive})
+		_, err := NewEngineWithOptions(tt.input, EngineOptions{UseRecompiler: true})
 		if err == nil {
 			t.Errorf("input %q: expected error, got nil", tt.input)
 			continue
