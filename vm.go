@@ -37,6 +37,7 @@ func runVMMapped(bc *RenderedBytecode, ctx *MapContext) (any, error) {
 		switch inst.Op {
 		case OpPush:
 			sp++
+			if sp >= 64 { return nil, fmt.Errorf("VM stack overflow") }
 			stack[sp] = consts[inst.Arg]
 		case OpPop:
 			sp--
@@ -159,6 +160,7 @@ func runVMMapped(bc *RenderedBytecode, ctx *MapContext) (any, error) {
 		case OpGetGlobal:
 			name := consts[inst.Arg].Str
 			sp++
+			if sp >= 64 { return nil, fmt.Errorf("VM stack overflow") }
 			stack[sp] = FromInterface(vars[name])
 		case OpSetGlobal:
 			name := consts[inst.Arg].Str
@@ -324,6 +326,7 @@ func runVMGeneral(bc *RenderedBytecode, ctx Context) (any, error) {
 		switch inst.Op {
 		case OpPush:
 			sp++
+			if sp >= 64 { return nil, fmt.Errorf("VM stack overflow") }
 			stack[sp] = consts[inst.Arg]
 		case OpPop:
 			sp--
@@ -443,6 +446,7 @@ func runVMGeneral(bc *RenderedBytecode, ctx Context) (any, error) {
 			name := consts[inst.Arg].Str
 			val, _ := ctx.Get(name)
 			sp++
+			if sp >= 64 { return nil, fmt.Errorf("VM stack overflow") }
 			stack[sp] = FromInterface(val)
 		case OpSetGlobal:
 			name := consts[inst.Arg].Str
