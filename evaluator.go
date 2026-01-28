@@ -25,7 +25,10 @@ func Eval(node Node, ctx Context) (any, error) {
 		val, _ := ctx.Get(n.Value)
 		return val, nil
 	case *NumberLiteral:
-		return n.Value, nil
+		if n.IsInt {
+			return n.Int64Value, nil
+		}
+		return n.Float64Value, nil
 	case *StringLiteral:
 		return n.Value, nil
 	case *BooleanLiteral:
@@ -90,8 +93,13 @@ func Eval(node Node, ctx Context) (any, error) {
 func evalPrefixExpression(operator string, right any) (any, error) {
 	switch operator {
 	case "-":
-		if r, ok := right.(float64); ok {
+		switch r := right.(type) {
+		case int64:
 			return -r, nil
+		case float64:
+			return -r, nil
+		case int:
+			return -int64(r), nil
 		}
 		return nil, fmt.Errorf("unknown operator: -%T", right)
 	default:
@@ -100,74 +108,102 @@ func evalPrefixExpression(operator string, right any) (any, error) {
 }
 
 func evalInfixExpression(operator string, left, right any) (any, error) {
-	switch {
-	case operator == "==" || operator == ">" || operator == "<" || operator == ">=" || operator == "<=":
-		fl, okL := toFloat64(left)
-		fr, okR := toFloat64(right)
-		if okL && okR {
-			return evalNumberComparison(operator, fl, fr)
-		}
-		if operator == "==" {
-			return boolToAny(left == right), nil
-		}
-	case operator == "+" || operator == "-":
-		fl, okL := toFloat64(left)
-		fr, okR := toFloat64(right)
-		if okL && okR {
-			return evalNumberArithmetic(operator, fl, fr)
-		}
-		if operator == "+" {
-			sl, okSL := left.(string)
-			sr, okSR := right.(string)
-			if okSL && okSR {
-				return sl + sr, nil
-			}
+	switch operator {
+	case "+", "-", "*", "/", "%":
+		return evalArithmetic(operator, left, right)
+	case "==", ">", "<", ">=", "<=":
+		return evalComparison(operator, left, right)
+	}
+	return nil, fmt.Errorf("unknown operator: %T %s %T", left, operator, right)
+}
+
+func evalArithmetic(operator string, left, right any) (any, error) {
+	// Fast path: both are int64
+	il, okL := left.(int64)
+	ir, okR := right.(int64)
+	if okL && okR {
+		switch operator {
+		case "+": return il + ir, nil
+		case "-": return il - ir, nil
+		case "*": return il * ir, nil
+		case "/":
+			if ir == 0 { return nil, fmt.Errorf("division by zero") }
+			return il / ir, nil
+		case "%":
+			if ir == 0 { return nil, fmt.Errorf("division by zero") }
+			return il % ir, nil
 		}
 	}
 
-	return nil, fmt.Errorf("unknown operator: %T %s %T", left, operator, right)
+	// String concatenation
+	if operator == "+" {
+		sl, okSL := left.(string)
+		sr, okSR := right.(string)
+		if okSL && okSR {
+			return sl + sr, nil
+		}
+	}
+
+	// Mixed or float
+	fl, okFL := toFloat64(left)
+	fr, okFR := toFloat64(right)
+	if okFL && okFR {
+		switch operator {
+		case "+": return fl + fr, nil
+		case "-": return fl - fr, nil
+		case "*": return fl * fr, nil
+		case "/":
+			if fr == 0 { return nil, fmt.Errorf("division by zero") }
+			return fl / fr, nil
+		}
+	}
+
+	return nil, fmt.Errorf("invalid arithmetic: %T %s %T", left, operator, right)
+}
+
+func evalComparison(operator string, left, right any) (any, error) {
+	// Fast path: both are int64
+	il, okL := left.(int64)
+	ir, okR := right.(int64)
+	if okL && okR {
+		switch operator {
+		case "==": return boolToAny(il == ir), nil
+		case ">":  return boolToAny(il > ir), nil
+		case "<":  return boolToAny(il < ir), nil
+		case ">=": return boolToAny(il >= ir), nil
+		case "<=": return boolToAny(il <= ir), nil
+		}
+	}
+
+	// Mixed or float
+	fl, okFL := toFloat64(left)
+	fr, okFR := toFloat64(right)
+	if okFL && okFR {
+		switch operator {
+		case "==": return boolToAny(fl == fr), nil
+		case ">":  return boolToAny(fl > fr), nil
+		case "<":  return boolToAny(fl < fr), nil
+		case ">=": return boolToAny(fl >= fr), nil
+		case "<=": return boolToAny(fl <= fr), nil
+		}
+	}
+
+	if operator == "==" {
+		return boolToAny(left == right), nil
+	}
+
+	return nil, fmt.Errorf("invalid comparison: %T %s %T", left, operator, right)
 }
 
 func toFloat64(v any) (float64, bool) {
 	switch val := v.(type) {
-	case int:
-		return float64(val), true
-	case int32:
-		return float64(val), true
-	case int64:
-		return float64(val), true
-	case float32:
-		return float64(val), true
-	case float64:
-		return val, true
+	case float64: return val, true
+	case int64:   return float64(val), true
+	case int:     return float64(val), true
+	case float32: return float64(val), true
+	case int32:   return float64(val), true
 	}
 	return 0, false
-}
-
-func evalNumberComparison(operator string, left, right float64) (any, error) {
-	switch operator {
-	case "==":
-		return boolToAny(left == right), nil
-	case ">":
-		return boolToAny(left > right), nil
-	case "<":
-		return boolToAny(left < right), nil
-	case ">=":
-		return boolToAny(left >= right), nil
-	case "<=":
-		return boolToAny(left <= right), nil
-	}
-	return nil, fmt.Errorf("unknown comparison operator: %s", operator)
-}
-
-func evalNumberArithmetic(operator string, left, right float64) (any, error) {
-	switch operator {
-	case "+":
-		return left + right, nil
-	case "-":
-		return left - right, nil
-	}
-	return nil, fmt.Errorf("unknown arithmetic operator: %s", operator)
 }
 
 

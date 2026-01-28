@@ -20,7 +20,11 @@ func NewEngine(input string) (*Engine, error) {
 	if len(p.Errors()) != 0 {
 		return nil, fmt.Errorf("parser errors: %v", p.Errors())
 	}
-	return &Engine{program: program}, nil
+	folded := Fold(program)
+	if folded == nil {
+		return &Engine{program: program}, nil
+	}
+	return &Engine{program: folded.(Expression)}, nil
 }
 
 func (e *Engine) Execute(vars map[string]any) (any, error) {
