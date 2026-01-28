@@ -15,13 +15,18 @@ import (
 )
 
 func main() {
-	input := `if user_age >= 18 is "adult" else is "minor"`
-	engine, _ := uwasa.NewEngine(input)
+	input := `if user_age >= 18 is concat("User is ", status) else is "Access Denied"`
 
-	vars := map[string]any{"user_age": 20}
+	// 对于高性能场景，推荐使用 NewEngineVM
+	engine, _ := uwasa.NewEngineVM(input)
+
+	vars := map[string]any{
+		"user_age": int64(20),
+		"status":   "Verified",
+	}
 	result, _ := engine.Execute(vars)
 
-	fmt.Printf("User status: %v\n", result) // User status: adult
+	fmt.Printf("Result: %v\n", result) // Result: User is Verified
 }
 ```
 
@@ -32,13 +37,14 @@ func main() {
 在 Uwasa DSL 中，各类型的规范书写方式如下：
 
 ### 1. 数字 (Numbers)
-- **整数**: 直接书写，如 `100`, `-5`。
-- **浮点数**: 使用小数点，如 `3.14`, `0.5`, `.5`。
-- **注意**: 引擎内部统一使用 `float64` 进行运算，会自动处理类型提升。
+- **整数**: 直接书写，如 `100`, `-5`。引擎内部使用 `int64` 存储并执行快速计算。
+- **浮点数**: 使用小数点，如 `3.14`, `0.5`, `.5`。内部使用 `float64`。
+- **注意**: 建议在 `vars` 中传入 `int64` 以获得最佳性能。
 
 ### 2. 字符串 (Strings)
 - **书写方式**: 必须使用**双引号**包裹，如 `"hello"`, `"激活"`。
-- **注意**: 目前不支持单引号。字符串可以进行 `+` 运算实现拼接。
+- **内置函数**: 推荐使用 `concat(a, b, ...)` 进行多段高效拼接。
+- **注意**: 目前不支持单引号。
 
 ### 3. 标识符/变量名 (Identifiers)
 - **书写规则**: 以字母或下划线 `_` 开头，后续可跟字母、数字或下划线。
@@ -57,7 +63,7 @@ func main() {
 ## 核心语法
 最简单的用法是直接进行条件判断，引擎将返回一个布尔值。
 - **示例**: `if price > 100 && member == true`
-- **支持的操作符**: `==`, `!=`, `>`, `<`, `>=`, `<=`, `&&`
+- **支持的操作符**: `+`, `-`, `*`, `/`, `%`, `==`, `!=`, `>`, `<`, `>=`, `<=`, `&&`, `||`
 
 ### 2. 多层条件分支 (If-Is-Else)
 用于根据不同的条件返回不同的固定值或表达式结果。
@@ -71,7 +77,9 @@ func main() {
 
 ### 4. 复合运算与赋值
 - **示例**: `total = (price * count) - discount`
-- **字符串操作**: `greeting = "Hello, " + user_name`
+- **字符串操作**:
+    - 基础拼接: `greeting = "Hello, " + user_name`
+    - 高效拼接: `greeting = concat("Hello, ", user_name, "!")` (推荐用于多段拼接)
 
 ---
 
@@ -102,14 +110,23 @@ engine.ExecuteWithContext(&MyContext{})
 
 ## 最佳实践与性能建议
 
-1. **预编译引擎实例**:
-   `NewEngine` 函数会执行词法分析和语法分析，这是一个相对耗时的过程。建议在应用启动时预编译规则，并在运行期间复用 `Engine` 实例。`Engine` 实例是并发安全的。
+1. **选择合适的引擎入口**:
+   - **NewEngineVM (强烈推荐)**: 采用原生字节码执行，支持指令融合和零分配热点路径。对于线上高频调用的规则，这是最佳选择。
+   - **NewEngine**: 传统的 AST 解释器，平衡了极速编译与执行。
 
-2. **利用内置对象池**:
-   引擎内部使用了 `sync.Pool`。当你调用 `engine.Execute(vars)` 时，引擎会自动从池中获取上下文并在执行完后归还。这在处理高频规则求值时能显著降低内存抖动。
+2. **预编译引擎实例**:
+   建议在应用启动时预编译规则，并在运行期间复用 `Engine` 实例。
 
-3. **数值类型提示**:
-   为了计算的统一性，引擎内部会将数值转换为 `float64`。虽然引擎支持自动转换，但在传入 `vars` 时直接使用 `float64` 可以略微提升性能。
+2. **选择合适的优化等级**:
+   - `OptBasic` (默认): 开启常量折叠和基本短路折叠。
+   - `UseRecompiler`: 开启激进的代数简化（如 `x - x -> 0`）和静态分析检查。
+
+3. **数据类型最佳实践**:
+   - **整数**: 请在 `vars` 中显式使用 `int64`。这可以命中引擎的**整数快速路径**，避免任何浮点数转换。
+   - **字符串**: 拼接三段以上字符串时，强制建议使用 `concat(...)` 函数，其性能远高于连续的 `+` 运算。
+
+4. **利用内置对象池**:
+   引擎内部深度集成了 `sync.Pool`。当你调用 `engine.Execute(vars)` 时，底层会自动复用 Context。执行完毕后，内部会自动清理并回池，开发者无需手动干预。
 
 4. **短路逻辑优化**:
    在编写包含复杂计算或副作用的条件时，利用 `&&` 的短路特性。将最可能为 `false` 的条件放在左侧。

@@ -22,11 +22,18 @@ func (i *Identifier) expressionNode() {}
 func (i *Identifier) String() string   { return i.Value }
 
 type NumberLiteral struct {
-	Value float64
+	Int64Value   int64
+	Float64Value float64
+	IsInt        bool
 }
 
 func (n *NumberLiteral) expressionNode() {}
-func (n *NumberLiteral) String() string   { return fmt.Sprintf("%g", n.Value) }
+func (n *NumberLiteral) String() string {
+	if n.IsInt {
+		return fmt.Sprintf("%d", n.Int64Value)
+	}
+	return fmt.Sprintf("%g", n.Float64Value)
+}
 
 type StringLiteral struct {
 	Value string
@@ -107,4 +114,22 @@ type AssignExpression struct {
 func (ae *AssignExpression) expressionNode() {}
 func (ae *AssignExpression) String() string {
 	return "(" + ae.Name.String() + " = " + ae.Value.String() + ")"
+}
+
+type CallExpression struct {
+	Function  Expression
+	Arguments []Expression
+}
+
+func (ce *CallExpression) expressionNode() {}
+func (ce *CallExpression) String() string {
+	out := ce.Function.String() + "("
+	for i, arg := range ce.Arguments {
+		out += arg.String()
+		if i < len(ce.Arguments)-1 {
+			out += ", "
+		}
+	}
+	out += ")"
+	return out
 }

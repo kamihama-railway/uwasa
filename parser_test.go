@@ -93,7 +93,7 @@ func TestParserStructure(t *testing.T) {
 		t.Errorf("assign name wrong. expected='b', got=%q", assign.Name.Value)
 	}
 	val, ok := assign.Value.(*NumberLiteral)
-	if !ok || val.Value != 1 {
+	if !ok || (val.IsInt && val.Int64Value != 1) || (!val.IsInt && val.Float64Value != 1.0) {
 		t.Errorf("assign value wrong. expected=1, got=%v", assign.Value)
 	}
 
@@ -110,7 +110,7 @@ func TestParserPrecedence(t *testing.T) {
 		{"-a + b", "((-a) + b)"},
 		{"a + b + c", "((a + b) + c)"},
 		{"a + b - c", "((a + b) - c)"},
-		{"a + b * c", "(a + (b * c))"}, // Note: * is not implemented but let's see how it behaves if it was
+		{"a + b * c", "(a + (b * c))"},
 		{"a + b == c", "((a + b) == c)"},
 		{"a == b && c == d", "((a == b) && (c == d))"},
 		{"a == b || c == d", "((a == b) || (c == d))"},
@@ -124,13 +124,6 @@ func TestParserPrecedence(t *testing.T) {
 		l := NewLexer(tt.input)
 		p := NewParser(l)
 		program := p.ParseProgram()
-		// Since * is not implemented, the parser might stop early or error out.
-		// Actually * is not in the precedence map or tokens.
-		if tt.input == "a + b * c" {
-			// Expected current behavior: it parses "a + b" and stops because "*" is illegal/no prefix fn
-			// If I want to test it properly I should use implemented operators
-			continue
-		}
 
 		if len(p.Errors()) != 0 {
 			t.Errorf("input %q has errors: %v", tt.input, p.Errors())

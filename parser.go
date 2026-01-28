@@ -18,7 +18,9 @@ const (
 	EQUALS
 	LESSGREATER
 	SUM
+	PRODUCT
 	PREFIX
+	CALL
 )
 
 func getPrecedence(t TokenType) int {
@@ -35,6 +37,10 @@ func getPrecedence(t TokenType) int {
 		return LESSGREATER
 	case TokenPlus, TokenMinus:
 		return SUM
+	case TokenAsterisk, TokenSlash, TokenPercent:
+		return PRODUCT
+	case TokenLParen:
+		return CALL
 	default:
 		return LOWEST
 	}
@@ -67,6 +73,7 @@ var parserPool = sync.Pool{
 		p.registerPrefix(TokenTrue, p.parseBooleanLiteral)
 		p.registerPrefix(TokenFalse, p.parseBooleanLiteral)
 		p.registerPrefix(TokenMinus, p.parsePrefixExpression)
+		p.registerPrefix(TokenBang, p.parsePrefixExpression)
 		p.registerPrefix(TokenLParen, p.parseGroupedExpression)
 		p.registerPrefix(TokenIf, p.parseIfExpression)
 
@@ -79,6 +86,10 @@ var parserPool = sync.Pool{
 		p.registerInfix(TokenLe, p.parseInfixExpression)
 		p.registerInfix(TokenPlus, p.parseInfixExpression)
 		p.registerInfix(TokenMinus, p.parseInfixExpression)
+		p.registerInfix(TokenAsterisk, p.parseInfixExpression)
+		p.registerInfix(TokenSlash, p.parseInfixExpression)
+		p.registerInfix(TokenPercent, p.parseInfixExpression)
+		p.registerInfix(TokenLParen, p.parseCallExpression)
 		p.registerInfix(TokenAssign, p.parseAssignExpression)
 
 		return p
@@ -145,13 +156,17 @@ func (p *Parser) parseIdentifier() Expression {
 }
 
 func (p *Parser) parseNumberLiteral() Expression {
+	if i, err := strconv.ParseInt(p.curTok.Literal, 10, 64); err == nil {
+		return &NumberLiteral{Int64Value: i, IsInt: true}
+	}
+
 	val, err := strconv.ParseFloat(p.curTok.Literal, 64)
 	if err != nil {
-		msg := fmt.Sprintf("could not parse %q as float64", p.curTok.Literal)
+		msg := fmt.Sprintf("could not parse %q as number", p.curTok.Literal)
 		p.errors = append(p.errors, msg)
 		return nil
 	}
-	return &NumberLiteral{Value: val}
+	return &NumberLiteral{Float64Value: val, IsInt: false}
 }
 
 func (p *Parser) parseStringLiteral() Expression {
@@ -189,6 +204,36 @@ func (p *Parser) parseGroupedExpression() Expression {
 		return nil
 	}
 	return exp
+}
+
+func (p *Parser) parseCallExpression(function Expression) Expression {
+	exp := &CallExpression{Function: function}
+	exp.Arguments = p.parseExpressionList(TokenRParen)
+	return exp
+}
+
+func (p *Parser) parseExpressionList(end TokenType) []Expression {
+	list := []Expression{}
+
+	if p.peekTokenIs(end) {
+		p.nextToken()
+		return list
+	}
+
+	p.nextToken()
+	list = append(list, p.parseExpression(LOWEST))
+
+	for p.peekTokenIs(TokenComma) {
+		p.nextToken()
+		p.nextToken()
+		list = append(list, p.parseExpression(LOWEST))
+	}
+
+	if !p.expectPeek(end) {
+		return nil
+	}
+
+	return list
 }
 
 func (p *Parser) parseAssignExpression(left Expression) Expression {

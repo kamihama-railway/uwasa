@@ -18,6 +18,9 @@ const (
 	TokenAssign    // =
 	TokenPlus      // +
 	TokenMinus     // -
+	TokenAsterisk  // *
+	TokenSlash     // /
+	TokenPercent   // %
 	TokenGt        // >
 	TokenLt        // <
 	TokenGe        // >=
@@ -33,6 +36,8 @@ const (
 	TokenFalse     // false
 	TokenLParen    // (
 	TokenRParen    // )
+	TokenComma     // ,
+	TokenBang      // !
 )
 
 type Token struct {
@@ -101,6 +106,12 @@ func (l *Lexer) NextToken() Token {
 		tok = Token{Type: TokenPlus, Literal: "+"}
 	case '-':
 		tok = Token{Type: TokenMinus, Literal: "-"}
+	case '*':
+		tok = Token{Type: TokenAsterisk, Literal: "*"}
+	case '/':
+		tok = Token{Type: TokenSlash, Literal: "/"}
+	case '%':
+		tok = Token{Type: TokenPercent, Literal: "%"}
 	case '>':
 		if l.peekChar() == '=' {
 			l.readChar()
@@ -133,6 +144,10 @@ func (l *Lexer) NextToken() Token {
 		tok = Token{Type: TokenLParen, Literal: "("}
 	case ')':
 		tok = Token{Type: TokenRParen, Literal: ")"}
+	case ',':
+		tok = Token{Type: TokenComma, Literal: ","}
+	case '!':
+		tok = Token{Type: TokenBang, Literal: "!"}
 	case '"':
 		tok.Type = TokenString
 		tok.Literal = l.readString()
@@ -225,6 +240,9 @@ func (t TokenType) String() string {
 	case TokenAssign: return "="
 	case TokenPlus: return "+"
 	case TokenMinus: return "-"
+	case TokenAsterisk: return "*"
+	case TokenSlash: return "/"
+	case TokenPercent: return "%"
 	case TokenGt: return ">"
 	case TokenLt: return "<"
 	case TokenGe: return ">="
@@ -240,6 +258,8 @@ func (t TokenType) String() string {
 	case TokenFalse: return "false"
 	case TokenLParen: return "("
 	case TokenRParen: return ")"
+	case TokenComma: return ","
+	case TokenBang: return "!"
 	default: return "UNKNOWN"
 	}
 }

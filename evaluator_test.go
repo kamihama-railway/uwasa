@@ -15,9 +15,9 @@ func TestEvaluator(t *testing.T) {
 		{`if a == 0 is "yes" else if a == 1 is "ok" else is "bad"`, map[string]any{"a": 0}, "yes"},
 		{`if a == 0 is "yes" else if a == 1 is "ok" else is "bad"`, map[string]any{"a": 1}, "ok"},
 		{`if a == 0 is "yes" else if a == 1 is "ok" else is "bad"`, map[string]any{"a": 2}, "bad"},
-		{`if a == 0 then b + 10`, map[string]any{"a": 0, "b": 5}, 15.0},
-		{`if a == 0 then b + 10`, map[string]any{"a": 1, "b": 5}, nil},
-		{`b = b + 10`, map[string]any{"b": 5}, 15.0},
+		{`if a == 0 then b + 10`, map[string]any{"a": int64(0), "b": int64(5)}, int64(15)},
+		{`if a == 0 then b + 10`, map[string]any{"a": int64(1), "b": int64(5)}, nil},
+		{`b = b + 10`, map[string]any{"b": int64(5)}, int64(15)},
 		{`if (1 == 0) && (b = 20) is "ok" else is "no"`, map[string]any{"b": 5}, "no"},
 		{`if (1 == 1) || (b = 20) is "ok" else is "no"`, map[string]any{"b": 5}, "ok"},
 		{`if (1 == 0) || (1 == 1) is "ok" else is "no"`, nil, "ok"},
@@ -43,10 +43,12 @@ func TestEvaluator(t *testing.T) {
 		if result != tt.expected {
 			t.Errorf("test[%d] %q expected=%v, got=%v", i, tt.input, tt.expected, result)
 		}
+
+		// Additional checks for variable updates
 		if tt.input == `b = b + 10` {
 			val, _ := ctx.Get("b")
-			if val != 15.0 {
-				t.Errorf("test[%d] variable b not updated correctly, got %v", i, val)
+			if val != int64(15) {
+				t.Errorf("test[%d] variable b not updated correctly, got %T %v", i, val, val)
 			}
 		}
 		if tt.input == `if (1 == 0) && (b = 20) is "ok" else is "no"` {
@@ -61,18 +63,16 @@ func TestEvaluator(t *testing.T) {
 				t.Errorf("test[%d] variable b should not be updated due to short-circuit (||), got %v", i, val)
 			}
 		}
-		if tt.input == `is_active = true` {
-			val, _ := ctx.Get("is_active")
-			if val != true {
-				t.Errorf("test[%d] is_active should be true, got %v", i, val)
-			}
-		}
-		if tt.input == `is_active = false` {
-			val, _ := ctx.Get("is_active")
-			if val != false {
-				t.Errorf("test[%d] is_active should be false, got %v", i, val)
-			}
-		}
+	}
+}
+
+func TestEvalNil(t *testing.T) {
+	result, err := Eval(nil, nil)
+	if err != nil {
+		t.Errorf("Eval(nil, nil) error: %v", err)
+	}
+	if result != nil {
+		t.Errorf("Eval(nil, nil) expected nil, got %v", result)
 	}
 }
 
@@ -91,7 +91,7 @@ func TestEvaluatorErrors(t *testing.T) {
 		p := NewParser(l)
 		program := p.ParseProgram()
 		if len(p.Errors()) != 0 {
-			continue // Expected for some cases like 1 * 2
+			continue
 		}
 		ctx := NewMapContext(tt.vars)
 		_, err := Eval(program, ctx)
@@ -108,11 +108,12 @@ func TestEvaluatorTypeConversion(t *testing.T) {
 		expected any
 	}{
 		{`a + 1`, map[string]any{"a": int32(10)}, 11.0},
-		{`a + 1`, map[string]any{"a": int64(10)}, 11.0},
+		{`a + 1`, map[string]any{"a": int64(10)}, int64(11)},
 		{`a + 1`, map[string]any{"a": float32(10.5)}, 11.5},
 		{`a == 10`, map[string]any{"a": int(10)}, true},
-		// Actually if I use supported ones
-		{`((a + b) - (c - d)) - e`, map[string]any{"a": 50, "b": 60, "c": 10, "d": 5, "e": 5}, 100.0},
+		{`((a + b) - (c - d)) - e`, map[string]any{
+			"a": int64(50), "b": int64(60), "c": int64(10), "d": int64(5), "e": int64(5),
+		}, int64(100)},
 	}
 
 	for i, tt := range tests {
