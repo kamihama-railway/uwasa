@@ -53,7 +53,7 @@ func NewEngineWithOptions(input string, opts EngineOptions) (*Engine, error) {
 	}
 
 	if optimized == nil {
-		return &Engine{program: program}, nil
+		return &Engine{program: nil}, nil
 	}
 	return &Engine{program: optimized.(Expression)}, nil
 }
