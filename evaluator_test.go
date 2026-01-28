@@ -44,28 +44,33 @@ func TestEvaluator(t *testing.T) {
 			t.Errorf("test[%d] %q expected=%v, got=%v", i, tt.input, tt.expected, result)
 		}
 		if tt.input == `b = b + 10` {
-			if ctx.Get("b") != 15.0 {
-				t.Errorf("test[%d] variable b not updated correctly, got %v", i, ctx.Get("b"))
+			val, _ := ctx.Get("b")
+			if val != 15.0 {
+				t.Errorf("test[%d] variable b not updated correctly, got %v", i, val)
 			}
 		}
 		if tt.input == `if (1 == 0) && (b = 20) is "ok" else is "no"` {
-			if ctx.Get("b") != 5 {
-				t.Errorf("test[%d] variable b should not be updated due to short-circuit (&&), got %v", i, ctx.Get("b"))
+			val, _ := ctx.Get("b")
+			if val != 5 {
+				t.Errorf("test[%d] variable b should not be updated due to short-circuit (&&), got %v", i, val)
 			}
 		}
 		if tt.input == `if (1 == 1) || (b = 20) is "ok" else is "no"` {
-			if ctx.Get("b") != 5 {
-				t.Errorf("test[%d] variable b should not be updated due to short-circuit (||), got %v", i, ctx.Get("b"))
+			val, _ := ctx.Get("b")
+			if val != 5 {
+				t.Errorf("test[%d] variable b should not be updated due to short-circuit (||), got %v", i, val)
 			}
 		}
 		if tt.input == `is_active = true` {
-			if ctx.Get("is_active") != true {
-				t.Errorf("test[%d] is_active should be true, got %v", i, ctx.Get("is_active"))
+			val, _ := ctx.Get("is_active")
+			if val != true {
+				t.Errorf("test[%d] is_active should be true, got %v", i, val)
 			}
 		}
 		if tt.input == `is_active = false` {
-			if ctx.Get("is_active") != false {
-				t.Errorf("test[%d] is_active should be false, got %v", i, ctx.Get("is_active"))
+			val, _ := ctx.Get("is_active")
+			if val != false {
+				t.Errorf("test[%d] is_active should be false, got %v", i, val)
 			}
 		}
 	}
