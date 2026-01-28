@@ -22,7 +22,8 @@ func boolToAny(b bool) any {
 func Eval(node Node, ctx Context) (any, error) {
 	switch n := node.(type) {
 	case *Identifier:
-		return ctx.Get(n.Value), nil
+		val, _ := ctx.Get(n.Value)
+		return val, nil
 	case *NumberLiteral:
 		return n.Value, nil
 	case *StringLiteral:

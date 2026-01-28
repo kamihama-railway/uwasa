@@ -40,7 +40,10 @@ type benchContext struct {
 	vars map[string]any
 }
 
-func (c *benchContext) Get(name string) any { return c.vars[name] }
+func (c *benchContext) Get(name string) (any, bool) {
+	val, exists := c.vars[name]
+	return val, exists
+}
 func (c *benchContext) Set(name string, value any) error {
 	c.vars[name] = value
 	return nil
