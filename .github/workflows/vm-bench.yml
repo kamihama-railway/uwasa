@@ -18,7 +18,8 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.25.x'
+          go-version: '1.25'
+          check-latest: true
 
       - name: Run VM benchmarks
         # 只运行带有 VM 后缀的基准测试

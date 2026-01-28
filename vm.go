@@ -4,40 +4,116 @@
 package uwasa
 
 import (
-	"encoding/binary"
 	"fmt"
+	"math"
 	"sync"
 )
 
 const StackSize = 2048
 
+type valKind byte
+
+const (
+	valNil valKind = iota
+	valInt
+	valFloat
+	valBool
+	valString
+	valAny
+)
+
+type Value struct {
+	kind valKind
+	num  uint64
+	ptr  any
+}
+
+func (v Value) ToAny() any {
+	switch v.kind {
+	case valInt:
+		return int64(v.num)
+	case valFloat:
+		return math.Float64frombits(v.num)
+	case valBool:
+		return v.num != 0
+	case valString:
+		return v.ptr.(string)
+	case valAny:
+		return v.ptr
+	default:
+		return nil
+	}
+}
+
+func FromAny(a any) Value {
+	switch v := a.(type) {
+	case int64:
+		return Value{kind: valInt, num: uint64(v)}
+	case int:
+		return Value{kind: valInt, num: uint64(int64(v))}
+	case float64:
+		return Value{kind: valFloat, num: math.Float64bits(v)}
+	case bool:
+		if v {
+			return Value{kind: valBool, num: 1}
+		}
+		return Value{kind: valBool, num: 0}
+	case string:
+		return Value{kind: valString, ptr: v}
+	case nil:
+		return Value{kind: valNil}
+	default:
+		return Value{kind: valAny, ptr: v}
+	}
+}
+
+func (v Value) toFloat() (float64, bool) {
+	if v.kind == valFloat {
+		return math.Float64frombits(v.num), true
+	}
+	if v.kind == valInt {
+		return float64(int64(v.num)), true
+	}
+	return 0, false
+}
+
+type vmInstruction struct {
+	op  OpCode
+	arg uint16
+}
+
+type RenderedBytecode struct {
+	Instructions []vmInstruction
+	Constants    []Value
+}
+
 type VM struct {
-	constants    []any
-	instructions Instructions
-	stack        []any
+	constants    []Value
+	instructions []vmInstruction
+	stack        []Value
 	sp           int // stack pointer
 }
 
 var vmPool = sync.Pool{
 	New: func() any {
 		return &VM{
-			stack: make([]any, StackSize),
+			stack: make([]Value, StackSize),
 		}
 	},
 }
 
-func NewVM(bytecode *Bytecode) *VM {
+func NewVM(rendered *RenderedBytecode) *VM {
 	vm := vmPool.Get().(*VM)
-	vm.constants = bytecode.Constants
-	vm.instructions = bytecode.Instructions
+	vm.constants = rendered.Constants
+	vm.instructions = rendered.Instructions
 	vm.sp = 0
 	return vm
 }
 
 func (vm *VM) Free() {
-	// Clear stack to help GC
+	// Clear stack pointers to help GC
 	for i := 0; i < vm.sp; i++ {
-		vm.stack[i] = nil
+		vm.stack[i].ptr = nil
 	}
 	vm.constants = nil
 	vm.instructions = nil
@@ -45,95 +121,292 @@ func (vm *VM) Free() {
 }
 
 func (vm *VM) Run(ctx Context) (any, error) {
+	ins := vm.instructions
+	consts := vm.constants
+	stack := vm.stack
+	sp := vm.sp
 	ip := 0
-	for ip < len(vm.instructions) {
-		op := OpCode(vm.instructions[ip])
+
+	for ip < len(ins) {
+		inst := ins[ip]
+		op := inst.op
 
 		switch op {
 		case OpConstant:
-			constIndex := binary.BigEndian.Uint16(vm.instructions[ip+1:])
-			ip += 2
-			vm.push(vm.constants[constIndex])
+			if sp >= StackSize { return nil, fmt.Errorf("stack overflow") }
+			stack[sp] = consts[inst.arg]
+			sp++
 
 		case OpPop:
-			vm.pop()
-
-		case OpAdd, OpSub, OpMul, OpDiv, OpMod:
-			right := vm.pop()
-			left := vm.pop()
-			res, err := evalArithmetic(opToOperator(op), left, right)
-			if err != nil {
-				return nil, err
+			if sp > 0 {
+				sp--
 			}
-			vm.push(res)
 
-		case OpEqual, OpGreater, OpLess, OpGreaterEqual, OpLessEqual:
-			right := vm.pop()
-			left := vm.pop()
-			res, err := evalComparison(opToOperator(op), left, right)
-			if err != nil {
-				return nil, err
+		case OpAdd:
+			r := stack[sp-1]
+			l := stack[sp-2]
+			sp--
+			if l.kind == valInt && r.kind == valInt {
+				stack[sp-1] = Value{kind: valInt, num: uint64(int64(l.num) + int64(r.num))}
+			} else if l.kind == valFloat && r.kind == valFloat {
+				stack[sp-1] = Value{kind: valFloat, num: math.Float64bits(math.Float64frombits(l.num) + math.Float64frombits(r.num))}
+			} else if l.kind == valString && r.kind == valString {
+				stack[sp-1] = Value{kind: valString, ptr: l.ptr.(string) + r.ptr.(string)}
+			} else {
+				res, err := evalArithmetic("+", l.ToAny(), r.ToAny())
+				if err != nil { return nil, err }
+				stack[sp-1] = FromAny(res)
 			}
-			vm.push(res)
+
+		case OpSub:
+			r := stack[sp-1]
+			l := stack[sp-2]
+			sp--
+			if l.kind == valInt && r.kind == valInt {
+				stack[sp-1] = Value{kind: valInt, num: uint64(int64(l.num) - int64(r.num))}
+			} else if l.kind == valFloat && r.kind == valFloat {
+				stack[sp-1] = Value{kind: valFloat, num: math.Float64bits(math.Float64frombits(l.num) - math.Float64frombits(r.num))}
+			} else {
+				res, err := evalArithmetic("-", l.ToAny(), r.ToAny())
+				if err != nil { return nil, err }
+				stack[sp-1] = FromAny(res)
+			}
+
+		case OpMul:
+			r := stack[sp-1]
+			l := stack[sp-2]
+			sp--
+			if l.kind == valInt && r.kind == valInt {
+				stack[sp-1] = Value{kind: valInt, num: uint64(int64(l.num) * int64(r.num))}
+			} else if l.kind == valFloat && r.kind == valFloat {
+				stack[sp-1] = Value{kind: valFloat, num: math.Float64bits(math.Float64frombits(l.num) * math.Float64frombits(r.num))}
+			} else {
+				res, err := evalArithmetic("*", l.ToAny(), r.ToAny())
+				if err != nil { return nil, err }
+				stack[sp-1] = FromAny(res)
+			}
+
+		case OpDiv:
+			r := stack[sp-1]
+			l := stack[sp-2]
+			sp--
+			if l.kind == valInt && r.kind == valInt {
+				if r.num == 0 { return nil, fmt.Errorf("division by zero") }
+				stack[sp-1] = Value{kind: valInt, num: uint64(int64(l.num) / int64(r.num))}
+			} else if l.kind == valFloat && r.kind == valFloat {
+				if r.num == 0 { return nil, fmt.Errorf("division by zero") }
+				stack[sp-1] = Value{kind: valFloat, num: math.Float64bits(math.Float64frombits(l.num) / math.Float64frombits(r.num))}
+			} else {
+				res, err := evalArithmetic("/", l.ToAny(), r.ToAny())
+				if err != nil { return nil, err }
+				stack[sp-1] = FromAny(res)
+			}
+
+		case OpMod:
+			r := stack[sp-1]
+			l := stack[sp-2]
+			sp--
+			if l.kind == valInt && r.kind == valInt {
+				if r.num == 0 { return nil, fmt.Errorf("division by zero") }
+				stack[sp-1] = Value{kind: valInt, num: uint64(int64(l.num) % int64(r.num))}
+			} else {
+				res, err := evalArithmetic("%", l.ToAny(), r.ToAny())
+				if err != nil { return nil, err }
+				stack[sp-1] = FromAny(res)
+			}
+
+		case OpEqual:
+			r := stack[sp-1]
+			l := stack[sp-2]
+			sp--
+			if l.kind == r.kind && l.num == r.num && l.ptr == r.ptr {
+				stack[sp-1] = Value{kind: valBool, num: 1}
+			} else if fl, okL := l.toFloat(); okL {
+				if fr, okR := r.toFloat(); okR {
+					if fl == fr {
+						stack[sp-1] = Value{kind: valBool, num: 1}
+					} else {
+						stack[sp-1] = Value{kind: valBool, num: 0}
+					}
+				} else {
+					res, err := evalComparison("==", l.ToAny(), r.ToAny())
+					if err != nil { return nil, err }
+					stack[sp-1] = FromAny(res)
+				}
+			} else {
+				res, err := evalComparison("==", l.ToAny(), r.ToAny())
+				if err != nil { return nil, err }
+				stack[sp-1] = FromAny(res)
+			}
+
+		case OpGreater:
+			r := stack[sp-1]
+			l := stack[sp-2]
+			sp--
+			if l.kind == valInt && r.kind == valInt {
+				if int64(l.num) > int64(r.num) {
+					stack[sp-1] = Value{kind: valBool, num: 1}
+				} else {
+					stack[sp-1] = Value{kind: valBool, num: 0}
+				}
+			} else if fl, okL := l.toFloat(); okL {
+				if fr, okR := r.toFloat(); okR {
+					if fl > fr {
+						stack[sp-1] = Value{kind: valBool, num: 1}
+					} else {
+						stack[sp-1] = Value{kind: valBool, num: 0}
+					}
+				} else {
+					res, err := evalComparison(">", l.ToAny(), r.ToAny())
+					if err != nil { return nil, err }
+					stack[sp-1] = FromAny(res)
+				}
+			} else {
+				res, err := evalComparison(">", l.ToAny(), r.ToAny())
+				if err != nil { return nil, err }
+				stack[sp-1] = FromAny(res)
+			}
+
+		case OpLess:
+			r := stack[sp-1]
+			l := stack[sp-2]
+			sp--
+			if l.kind == valInt && r.kind == valInt {
+				if int64(l.num) < int64(r.num) {
+					stack[sp-1] = Value{kind: valBool, num: 1}
+				} else {
+					stack[sp-1] = Value{kind: valBool, num: 0}
+				}
+			} else if fl, okL := l.toFloat(); okL {
+				if fr, okR := r.toFloat(); okR {
+					if fl < fr {
+						stack[sp-1] = Value{kind: valBool, num: 1}
+					} else {
+						stack[sp-1] = Value{kind: valBool, num: 0}
+					}
+				} else {
+					res, err := evalComparison("<", l.ToAny(), r.ToAny())
+					if err != nil { return nil, err }
+					stack[sp-1] = FromAny(res)
+				}
+			} else {
+				res, err := evalComparison("<", l.ToAny(), r.ToAny())
+				if err != nil { return nil, err }
+				stack[sp-1] = FromAny(res)
+			}
+
+		case OpGreaterEqual:
+			r := stack[sp-1]
+			l := stack[sp-2]
+			sp--
+			if l.kind == valInt && r.kind == valInt {
+				if int64(l.num) >= int64(r.num) {
+					stack[sp-1] = Value{kind: valBool, num: 1}
+				} else {
+					stack[sp-1] = Value{kind: valBool, num: 0}
+				}
+			} else if fl, okL := l.toFloat(); okL {
+				if fr, okR := r.toFloat(); okR {
+					if fl >= fr {
+						stack[sp-1] = Value{kind: valBool, num: 1}
+					} else {
+						stack[sp-1] = Value{kind: valBool, num: 0}
+					}
+				} else {
+					res, err := evalComparison(">=", l.ToAny(), r.ToAny())
+					if err != nil { return nil, err }
+					stack[sp-1] = FromAny(res)
+				}
+			} else {
+				res, err := evalComparison(">=", l.ToAny(), r.ToAny())
+				if err != nil { return nil, err }
+				stack[sp-1] = FromAny(res)
+			}
+
+		case OpLessEqual:
+			r := stack[sp-1]
+			l := stack[sp-2]
+			sp--
+			if l.kind == valInt && r.kind == valInt {
+				if int64(l.num) <= int64(r.num) {
+					stack[sp-1] = Value{kind: valBool, num: 1}
+				} else {
+					stack[sp-1] = Value{kind: valBool, num: 0}
+				}
+			} else if fl, okL := l.toFloat(); okL {
+				if fr, okR := r.toFloat(); okR {
+					if fl <= fr {
+						stack[sp-1] = Value{kind: valBool, num: 1}
+					} else {
+						stack[sp-1] = Value{kind: valBool, num: 0}
+					}
+				} else {
+					res, err := evalComparison("<=", l.ToAny(), r.ToAny())
+					if err != nil { return nil, err }
+					stack[sp-1] = FromAny(res)
+				}
+			} else {
+				res, err := evalComparison("<=", l.ToAny(), r.ToAny())
+				if err != nil { return nil, err }
+				stack[sp-1] = FromAny(res)
+			}
 
 		case OpMinus:
-			right := vm.pop()
-			res, err := evalPrefixExpression("-", right)
-			if err != nil {
-				return nil, err
+			r := stack[sp-1]
+			if r.kind == valInt {
+				stack[sp-1] = Value{kind: valInt, num: uint64(-int64(r.num))}
+			} else if r.kind == valFloat {
+				stack[sp-1] = Value{kind: valFloat, num: math.Float64bits(-math.Float64frombits(r.num))}
+			} else {
+				res, err := evalPrefixExpression("-", r.ToAny())
+				if err != nil { return nil, err }
+				stack[sp-1] = FromAny(res)
 			}
-			vm.push(res)
 
 		case OpGetGlobal:
-			nameIndex := binary.BigEndian.Uint16(vm.instructions[ip+1:])
-			ip += 2
-			name := vm.constants[nameIndex].(string)
+			if sp >= StackSize { return nil, fmt.Errorf("stack overflow") }
+			name := consts[inst.arg].ptr.(string)
 			val, _ := ctx.Get(name)
-			vm.push(val)
+			stack[sp] = FromAny(val)
+			sp++
 
 		case OpSetGlobal:
-			nameIndex := binary.BigEndian.Uint16(vm.instructions[ip+1:])
-			ip += 2
-			name := vm.constants[nameIndex].(string)
-			val := vm.peek()
-			err := ctx.Set(name, val)
-			if err != nil {
-				return nil, err
-			}
+			name := consts[inst.arg].ptr.(string)
+			val := stack[sp-1]
+			err := ctx.Set(name, val.ToAny())
+			if err != nil { return nil, err }
 
 		case OpJump:
-			pos := int(binary.BigEndian.Uint16(vm.instructions[ip+1:]))
-			ip = pos - 1
+			ip = int(inst.arg) - 1
 
 		case OpJumpIfFalse:
-			pos := int(binary.BigEndian.Uint16(vm.instructions[ip+1:]))
-			condition := vm.peek()
-			if !isTruthy(condition) {
-				ip = pos - 1
-			} else {
-				ip += 2
+			cond := stack[sp-1]
+			if !isTruthyValue(cond) {
+				ip = int(inst.arg) - 1
 			}
 
 		case OpJumpIfTrue:
-			pos := int(binary.BigEndian.Uint16(vm.instructions[ip+1:]))
-			condition := vm.peek()
-			if isTruthy(condition) {
-				ip = pos - 1
-			} else {
-				ip += 2
+			cond := stack[sp-1]
+			if isTruthyValue(cond) {
+				ip = int(inst.arg) - 1
 			}
 
 		case OpToBool:
-			val := vm.pop()
-			vm.push(boolToAny(isTruthy(val)))
+			val := stack[sp-1]
+			if isTruthyValue(val) {
+				stack[sp-1] = Value{kind: valBool, num: 1}
+			} else {
+				stack[sp-1] = Value{kind: valBool, num: 0}
+			}
 
 		case OpCall:
-			numArgs := int(vm.instructions[ip+1])
-			ip += 1
-			funcName := vm.pop().(string)
+			numArgs := int(inst.arg)
+			funcName := stack[sp-1].ptr.(string)
+			sp--
 			args := make([]any, numArgs)
 			for i := numArgs - 1; i >= 0; i-- {
-				args[i] = vm.pop()
+				args[i] = stack[sp-1].ToAny()
+				sp--
 			}
 			builtin, ok := builtins[funcName]
 			if !ok {
@@ -143,7 +416,9 @@ func (vm *VM) Run(ctx Context) (any, error) {
 			if err != nil {
 				return nil, err
 			}
-			vm.push(res)
+			if sp >= StackSize { return nil, fmt.Errorf("stack overflow") }
+			stack[sp] = FromAny(res)
+			sp++
 
 		default:
 			return nil, fmt.Errorf("unsupported opcode: %d", op)
@@ -152,47 +427,19 @@ func (vm *VM) Run(ctx Context) (any, error) {
 		ip++
 	}
 
-	if vm.sp == 0 {
+	if sp == 0 {
 		return nil, nil
 	}
-	return vm.stack[vm.sp-1], nil
+	return stack[sp-1].ToAny(), nil
 }
 
-func (vm *VM) push(obj any) {
-	if vm.sp >= StackSize {
-		panic("stack overflow")
+func isTruthyValue(v Value) bool {
+	switch v.kind {
+	case valBool:
+		return v.num != 0
+	case valNil:
+		return false
+	default:
+		return true
 	}
-	vm.stack[vm.sp] = obj
-	vm.sp++
-}
-
-func (vm *VM) pop() any {
-	if vm.sp == 0 {
-		panic("stack underflow")
-	}
-	vm.sp--
-	return vm.stack[vm.sp]
-}
-
-func (vm *VM) peek() any {
-	if vm.sp == 0 {
-		return nil
-	}
-	return vm.stack[vm.sp-1]
-}
-
-func opToOperator(op OpCode) string {
-	switch op {
-	case OpAdd: return "+"
-	case OpSub: return "-"
-	case OpMul: return "*"
-	case OpDiv: return "/"
-	case OpMod: return "%"
-	case OpEqual: return "=="
-	case OpGreater: return ">"
-	case OpLess: return "<"
-	case OpGreaterEqual: return ">="
-	case OpLessEqual: return "<="
-	}
-	return ""
 }

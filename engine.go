@@ -23,6 +23,7 @@ type EngineOptions struct {
 type Engine struct {
 	program  Expression
 	bytecode *Bytecode
+	rendered *RenderedBytecode
 }
 
 func NewEngine(input string) (*Engine, error) {
@@ -59,6 +60,7 @@ func NewEngineWithOptions(input string, opts EngineOptions) (*Engine, error) {
 	}
 
 	var bc *Bytecode
+	var rendered *RenderedBytecode
 	if opts.UseVM {
 		comp := NewCompiler()
 		err := comp.Compile(optimized)
@@ -66,11 +68,13 @@ func NewEngineWithOptions(input string, opts EngineOptions) (*Engine, error) {
 			return nil, err
 		}
 		bc = comp.Bytecode()
+		rendered = bc.Render()
 	}
 
 	return &Engine{
 		program:  optimized.(Expression),
 		bytecode: bc,
+		rendered: rendered,
 	}, nil
 }
 
@@ -84,8 +88,8 @@ func (e *Engine) Execute(vars map[string]any) (any, error) {
 }
 
 func (e *Engine) ExecuteWithContext(ctx Context) (any, error) {
-	if e.bytecode != nil {
-		vm := NewVM(e.bytecode)
+	if e.rendered != nil {
+		vm := NewVM(e.rendered)
 		defer vm.Free()
 		return vm.Run(ctx)
 	}

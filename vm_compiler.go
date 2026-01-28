@@ -208,3 +208,54 @@ func (c *Compiler) Bytecode() *Bytecode {
 		Constants:    c.constants,
 	}
 }
+
+func (b *Bytecode) Render() *RenderedBytecode {
+	offsetToIdx := make(map[int]int)
+	var renderedIns []vmInstruction
+
+	// First pass: identify instruction boundaries and map offsets to indices
+	i := 0
+	for i < len(b.Instructions) {
+		offsetToIdx[i] = len(renderedIns)
+		op := b.Instructions[i]
+		def, _ := Lookup(op)
+		renderedIns = append(renderedIns, vmInstruction{op: OpCode(op)})
+		i += 1
+		for _, w := range def.OperandWidths {
+			i += w
+		}
+	}
+	offsetToIdx[i] = len(renderedIns) // handle end of stream
+
+	// Second pass: fill in operands and re-map jumps
+	i = 0
+	idx := 0
+	for i < len(b.Instructions) {
+		op := b.Instructions[i]
+		def, _ := Lookup(op)
+		operands, read := ReadOperands(def, b.Instructions[i+1:])
+
+		arg := uint16(0)
+		if len(operands) > 0 {
+			if op == byte(OpJump) || op == byte(OpJumpIfFalse) || op == byte(OpJumpIfTrue) {
+				arg = uint16(offsetToIdx[operands[0]])
+			} else {
+				arg = uint16(operands[0])
+			}
+		}
+		renderedIns[idx].arg = arg
+
+		i += 1 + read
+		idx++
+	}
+
+	renderedConstants := make([]Value, len(b.Constants))
+	for i, c := range b.Constants {
+		renderedConstants[i] = FromAny(c)
+	}
+
+	return &RenderedBytecode{
+		Instructions: renderedIns,
+		Constants:    renderedConstants,
+	}
+}
