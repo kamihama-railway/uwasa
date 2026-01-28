@@ -37,6 +37,7 @@ func runVMMapped(bc *RenderedBytecode, ctx *MapContext) (any, error) {
 		switch inst.Op {
 		case OpPush:
 			sp++
+			if sp >= 64 { return nil, fmt.Errorf("VM stack overflow") }
 			stack[sp] = consts[inst.Arg]
 		case OpPop:
 			sp--
@@ -159,6 +160,7 @@ func runVMMapped(bc *RenderedBytecode, ctx *MapContext) (any, error) {
 		case OpGetGlobal:
 			name := consts[inst.Arg].Str
 			sp++
+			if sp >= 64 { return nil, fmt.Errorf("VM stack overflow") }
 			stack[sp] = FromInterface(vars[name])
 		case OpSetGlobal:
 			name := consts[inst.Arg].Str
@@ -175,7 +177,9 @@ func runVMMapped(bc *RenderedBytecode, ctx *MapContext) (any, error) {
 			if builtin, ok := builtins[name]; ok {
 				res, err := builtin(args...)
 				if err != nil { return nil, err }
-				sp++; stack[sp] = FromInterface(res)
+				sp++
+				if sp >= 64 { return nil, fmt.Errorf("VM stack overflow") }
+				stack[sp] = FromInterface(res)
 			} else {
 				return nil, fmt.Errorf("builtin function not found: %s", name)
 			}
@@ -199,6 +203,7 @@ func runVMMapped(bc *RenderedBytecode, ctx *MapContext) (any, error) {
 			lv := FromInterface(vars[name])
 			rv := consts[cIdx]
 			sp++
+			if sp >= 64 { return nil, fmt.Errorf("VM stack overflow") }
 			if lv.Type == ValInt && rv.Type == ValInt {
 				stack[sp] = Value{Type: ValInt, Num: lv.Num + rv.Num}
 			} else {
@@ -210,6 +215,7 @@ func runVMMapped(bc *RenderedBytecode, ctx *MapContext) (any, error) {
 			lv := FromInterface(vars[consts[g1Idx].Str])
 			rv := FromInterface(vars[consts[g2Idx].Str])
 			sp++
+			if sp >= 64 { return nil, fmt.Errorf("VM stack overflow") }
 			if lv.Type == ValInt && rv.Type == ValInt {
 				stack[sp] = Value{Type: ValInt, Num: lv.Num + rv.Num}
 			} else {
@@ -231,7 +237,9 @@ func runVMMapped(bc *RenderedBytecode, ctx *MapContext) (any, error) {
 				lf, okL := valToFloat64(lv); rf, okR := valToFloat64(r)
 				if okL && okR { res = lf == rf }
 			}
-			sp++; stack[sp] = Value{Type: ValBool, Num: boolToUint64(res)}
+			sp++
+			if sp >= 64 { return nil, fmt.Errorf("VM stack overflow") }
+			stack[sp] = Value{Type: ValBool, Num: boolToUint64(res)}
 		case OpGreaterGlobalConst:
 			gIdx := inst.Arg >> 16; cIdx := inst.Arg & 0xFFFF
 			lv := FromInterface(vars[consts[gIdx].Str])
@@ -243,7 +251,9 @@ func runVMMapped(bc *RenderedBytecode, ctx *MapContext) (any, error) {
 				lf, _ := valToFloat64(lv); rf, _ := valToFloat64(r)
 				res = lf > rf
 			}
-			sp++; stack[sp] = Value{Type: ValBool, Num: boolToUint64(res)}
+			sp++
+			if sp >= 64 { return nil, fmt.Errorf("VM stack overflow") }
+			stack[sp] = Value{Type: ValBool, Num: boolToUint64(res)}
 		case OpLessGlobalConst:
 			gIdx := inst.Arg >> 16; cIdx := inst.Arg & 0xFFFF
 			lv := FromInterface(vars[consts[gIdx].Str])
@@ -255,7 +265,9 @@ func runVMMapped(bc *RenderedBytecode, ctx *MapContext) (any, error) {
 				lf, _ := valToFloat64(lv); rf, _ := valToFloat64(r)
 				res = lf < rf
 			}
-			sp++; stack[sp] = Value{Type: ValBool, Num: boolToUint64(res)}
+			sp++
+			if sp >= 64 { return nil, fmt.Errorf("VM stack overflow") }
+			stack[sp] = Value{Type: ValBool, Num: boolToUint64(res)}
 		case OpFusedCompareGlobalConstJumpIfFalse:
 			gIdx := int(inst.Arg >> 22) & 0x3FF
 			cIdx := int(inst.Arg >> 12) & 0x3FF
@@ -302,7 +314,9 @@ func runVMMapped(bc *RenderedBytecode, ctx *MapContext) (any, error) {
 			buf.Reset(); buf.Grow(totalLen)
 			for _, s := range argStrings { buf.WriteString(s) }
 			res := buf.String(); bufferPool.Put(buf)
-			sp++; stack[sp] = Value{Type: ValString, Str: res}
+			sp++
+			if sp >= 64 { return nil, fmt.Errorf("VM stack overflow") }
+			stack[sp] = Value{Type: ValString, Str: res}
 		}
 	}
 	if sp < 0 { return nil, nil }
@@ -324,6 +338,7 @@ func runVMGeneral(bc *RenderedBytecode, ctx Context) (any, error) {
 		switch inst.Op {
 		case OpPush:
 			sp++
+			if sp >= 64 { return nil, fmt.Errorf("VM stack overflow") }
 			stack[sp] = consts[inst.Arg]
 		case OpPop:
 			sp--
@@ -443,6 +458,7 @@ func runVMGeneral(bc *RenderedBytecode, ctx Context) (any, error) {
 			name := consts[inst.Arg].Str
 			val, _ := ctx.Get(name)
 			sp++
+			if sp >= 64 { return nil, fmt.Errorf("VM stack overflow") }
 			stack[sp] = FromInterface(val)
 		case OpSetGlobal:
 			name := consts[inst.Arg].Str
@@ -459,7 +475,9 @@ func runVMGeneral(bc *RenderedBytecode, ctx Context) (any, error) {
 			if builtin, ok := builtins[name]; ok {
 				res, err := builtin(args...)
 				if err != nil { return nil, err }
-				sp++; stack[sp] = FromInterface(res)
+				sp++
+				if sp >= 64 { return nil, fmt.Errorf("VM stack overflow") }
+				stack[sp] = FromInterface(res)
 			} else {
 				return nil, fmt.Errorf("builtin function not found: %s", name)
 			}
@@ -483,6 +501,7 @@ func runVMGeneral(bc *RenderedBytecode, ctx Context) (any, error) {
 			lv := FromInterface(val)
 			rv := consts[cIdx]
 			sp++
+			if sp >= 64 { return nil, fmt.Errorf("VM stack overflow") }
 			if lv.Type == ValInt && rv.Type == ValInt {
 				stack[sp] = Value{Type: ValInt, Num: lv.Num + rv.Num}
 			} else {
@@ -495,6 +514,7 @@ func runVMGeneral(bc *RenderedBytecode, ctx Context) (any, error) {
 			v2, _ := ctx.Get(consts[g2Idx].Str)
 			lv := FromInterface(v1); rv := FromInterface(v2)
 			sp++
+			if sp >= 64 { return nil, fmt.Errorf("VM stack overflow") }
 			if lv.Type == ValInt && rv.Type == ValInt {
 				stack[sp] = Value{Type: ValInt, Num: lv.Num + rv.Num}
 			} else {
@@ -516,7 +536,9 @@ func runVMGeneral(bc *RenderedBytecode, ctx Context) (any, error) {
 				lf, okL := valToFloat64(lv); rf, okR := valToFloat64(r)
 				if okL && okR { res = lf == rf }
 			}
-			sp++; stack[sp] = Value{Type: ValBool, Num: boolToUint64(res)}
+			sp++
+			if sp >= 64 { return nil, fmt.Errorf("VM stack overflow") }
+			stack[sp] = Value{Type: ValBool, Num: boolToUint64(res)}
 		case OpGreaterGlobalConst:
 			gIdx := inst.Arg >> 16; cIdx := inst.Arg & 0xFFFF
 			val, _ := ctx.Get(consts[gIdx].Str)
@@ -528,7 +550,9 @@ func runVMGeneral(bc *RenderedBytecode, ctx Context) (any, error) {
 				lf, _ := valToFloat64(lv); rf, _ := valToFloat64(r)
 				res = lf > rf
 			}
-			sp++; stack[sp] = Value{Type: ValBool, Num: boolToUint64(res)}
+			sp++
+			if sp >= 64 { return nil, fmt.Errorf("VM stack overflow") }
+			stack[sp] = Value{Type: ValBool, Num: boolToUint64(res)}
 		case OpLessGlobalConst:
 			gIdx := inst.Arg >> 16; cIdx := inst.Arg & 0xFFFF
 			val, _ := ctx.Get(consts[gIdx].Str)
@@ -540,7 +564,9 @@ func runVMGeneral(bc *RenderedBytecode, ctx Context) (any, error) {
 				lf, _ := valToFloat64(lv); rf, _ := valToFloat64(r)
 				res = lf < rf
 			}
-			sp++; stack[sp] = Value{Type: ValBool, Num: boolToUint64(res)}
+			sp++
+			if sp >= 64 { return nil, fmt.Errorf("VM stack overflow") }
+			stack[sp] = Value{Type: ValBool, Num: boolToUint64(res)}
 		case OpFusedCompareGlobalConstJumpIfFalse:
 			gIdx := int(inst.Arg >> 22) & 0x3FF
 			cIdx := int(inst.Arg >> 12) & 0x3FF
@@ -589,7 +615,9 @@ func runVMGeneral(bc *RenderedBytecode, ctx Context) (any, error) {
 			buf.Reset(); buf.Grow(totalLen)
 			for _, s := range argStrings { buf.WriteString(s) }
 			res := buf.String(); bufferPool.Put(buf)
-			sp++; stack[sp] = Value{Type: ValString, Str: res}
+			sp++
+			if sp >= 64 { return nil, fmt.Errorf("VM stack overflow") }
+			stack[sp] = Value{Type: ValString, Str: res}
 		}
 	}
 	if sp < 0 { return nil, nil }

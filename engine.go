@@ -17,13 +17,15 @@ const (
 type EngineOptions struct {
 	OptimizationLevel OptimizationLevel
 	UseRecompiler     bool
+	UseRegisterVM     bool // Experimental: use register-based VM
 }
 
 type Engine struct {
-	program        Expression
-	bytecode       *RenderedBytecode
-	constantResult any
-	isConstant     bool
+	program          Expression
+	bytecode         *RenderedBytecode
+	registerBytecode *RegisterBytecode
+	constantResult   any
+	isConstant       bool
 }
 
 func NewEngine(input string) (*Engine, error) {
@@ -86,6 +88,25 @@ func NewEngineVMWithOptions(input string, opts EngineOptions) (*Engine, error) {
 		return nil, fmt.Errorf("parser errors: %v", p.Errors())
 	}
 
+	if opts.UseRegisterVM {
+		c := NewRegisterCompiler()
+		// For now, register VM compiler doesn't have the full optimized pipeline like VMCompiler
+		// But we can manually fold
+		var optimized Node = program
+		if opts.OptimizationLevel >= OptBasic {
+			optimized = Fold(optimized)
+		}
+		bc, err := c.Compile(optimized)
+		if err != nil {
+			return nil, err
+		}
+		// If the resulting bytecode is just returning a single constant, optimize it
+		if bc != nil && len(bc.Instructions) == 2 && bc.Instructions[0].Op == ROpLoadConst && bc.Instructions[1].Op == ROpReturn {
+			return &Engine{constantResult: bc.Constants[bc.Instructions[0].Arg].ToInterface(), isConstant: true}, nil
+		}
+		return &Engine{registerBytecode: bc}, nil
+	}
+
 	c := NewVMCompiler()
 	// VMCompiler will handle its own optimization levels internally
 	bc, err := c.CompileOptimized(program, opts)
@@ -111,6 +132,9 @@ func (e *Engine) Execute(vars map[string]any) (any, error) {
 		ctx.vars = nil
 		contextPool.Put(ctx)
 	}()
+	if e.registerBytecode != nil {
+		return RunRegisterVM(e.registerBytecode, ctx)
+	}
 	if e.bytecode != nil {
 		return RunVM(e.bytecode, ctx)
 	}
@@ -122,6 +146,9 @@ func (e *Engine) ExecuteWithContext(ctx Context) (any, error) {
 		return e.constantResult, nil
 	}
 
+	if e.registerBytecode != nil {
+		return RunRegisterVM(e.registerBytecode, ctx)
+	}
 	if e.bytecode != nil {
 		return RunVM(e.bytecode, ctx)
 	}

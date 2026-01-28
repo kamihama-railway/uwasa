@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestVM(t *testing.T) {
+func TestRegisterVM(t *testing.T) {
 	tests := []struct {
 		input    string
 		vars     map[string]any
@@ -39,7 +39,7 @@ func TestVM(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		engine, err := NewEngineVM(tt.input)
+		engine, err := NewEngineVMWithOptions(tt.input, EngineOptions{UseRegisterVM: true})
 		if err != nil {
 			t.Errorf("input %s: NewEngine error: %v", tt.input, err)
 			continue
@@ -55,13 +55,10 @@ func TestVM(t *testing.T) {
 	}
 }
 
-func TestVM_ShortCircuit(t *testing.T) {
-	// Test if side effects are skipped using expressions
-	// Note: uwasa doesn't support multiple statements separated by semicolon in a single ParseProgram call
-
-	// If false, then (a=2) should not execute. Result should be false.
+func TestRegisterVM_ShortCircuit(t *testing.T) {
+	// Test if side effects are skipped
 	input := "false && (a = 2)"
-	engine, _ := NewEngineVM(input)
+	engine, _ := NewEngineVMWithOptions(input, EngineOptions{UseRegisterVM: true})
 	vars := map[string]any{"a": int64(0)}
 	got, _ := engine.Execute(vars)
 	if got != false {
@@ -71,9 +68,8 @@ func TestVM_ShortCircuit(t *testing.T) {
 		t.Errorf("Short-circuit && side effect failed: expected 0, got %v", vars["a"])
 	}
 
-	// If true, then (a=2) should not execute. Result should be true.
 	input2 := "true || (a = 2)"
-	engine2, _ := NewEngineVM(input2)
+	engine2, _ := NewEngineVMWithOptions(input2, EngineOptions{UseRegisterVM: true})
 	vars2 := map[string]any{"a": int64(0)}
 	got2, _ := engine2.Execute(vars2)
 	if got2 != true {
@@ -81,36 +77,5 @@ func TestVM_ShortCircuit(t *testing.T) {
 	}
 	if vars2["a"] != int64(0) {
 		t.Errorf("Short-circuit || side effect failed: expected 0, got %v", vars2["a"])
-	}
-}
-
-func TestVMStackOverflow(t *testing.T) {
-	// 1. Test basic stack overflow (many nested additions with identifier)
-	depth := 70
-	expr := "a"
-	for i := 0; i < depth; i++ {
-		expr = "a + (" + expr + ")"
-	}
-	engine, err := NewEngineVMWithOptions(expr, EngineOptions{OptimizationLevel: OptNone})
-	if err != nil {
-		t.Fatalf("NewEngineVM failed: %v", err)
-	}
-	_, err = engine.Execute(map[string]any{"a": 1})
-	if err == nil || err.Error() != "VM stack overflow" {
-		t.Errorf("Expected stack overflow error, got: %v", err)
-	}
-
-	// 2. Test stack overflow with OpAddGlobal (optimized path)
-	expr2 := "(a+1)"
-	for i := 0; i < depth; i++ {
-		expr2 = "(a+1) + (" + expr2 + ")"
-	}
-	engine2, err := NewEngineVMWithOptions(expr2, EngineOptions{OptimizationLevel: OptBasic})
-	if err != nil {
-		t.Fatalf("NewEngineVM failed: %v", err)
-	}
-	_, err = engine2.Execute(map[string]any{"a": 1})
-	if err == nil || err.Error() != "VM stack overflow" {
-		t.Errorf("Expected stack overflow error, got: %v", err)
 	}
 }
