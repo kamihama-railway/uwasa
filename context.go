@@ -9,7 +9,7 @@ import (
 
 // Context 定义了变量操作的接口
 type Context interface {
-	Get(name string) any
+	Get(name string) (val any, exists bool)
 	Set(name string, value any) error
 }
 
@@ -33,8 +33,9 @@ func NewMapContext(vars map[string]any) *MapContext {
 	return ctx
 }
 
-func (c *MapContext) Get(name string) any {
-	return c.vars[name]
+func (c *MapContext) Get(name string) (any, bool) {
+	val, exists := c.vars[name]
+	return val, exists
 }
 
 func (c *MapContext) Set(name string, value any) error {
