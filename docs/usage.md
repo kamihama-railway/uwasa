@@ -16,7 +16,9 @@ import (
 
 func main() {
 	input := `if user_age >= 18 is concat("User is ", status) else is "Access Denied"`
-	engine, _ := uwasa.NewEngine(input)
+
+	// 对于高性能场景，推荐使用 NewEngineVM
+	engine, _ := uwasa.NewEngineVM(input)
 
 	vars := map[string]any{
 		"user_age": int64(20),
@@ -108,8 +110,12 @@ engine.ExecuteWithContext(&MyContext{})
 
 ## 最佳实践与性能建议
 
-1. **预编译引擎实例**:
-   `NewEngine` 函数会执行词法分析和语法分析。建议在应用启动时预编译规则，并在运行期间复用 `Engine` 实例。
+1. **选择合适的引擎入口**:
+   - **NewEngineVM (强烈推荐)**: 采用原生字节码执行，支持指令融合和零分配热点路径。对于线上高频调用的规则，这是最佳选择。
+   - **NewEngine**: 传统的 AST 解释器，平衡了极速编译与执行。
+
+2. **预编译引擎实例**:
+   建议在应用启动时预编译规则，并在运行期间复用 `Engine` 实例。
 
 2. **选择合适的优化等级**:
    - `OptBasic` (默认): 开启常量折叠和基本短路折叠。

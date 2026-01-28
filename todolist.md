@@ -22,5 +22,9 @@
 - [x] 实现内置函数系统及高性能 concat 函数
 - [x] 完善全等级性能对比 Benchmark
 - [x] 深度细化全套技术文档
+- [x] 实现原生字节码虚拟机 (VM) 及配套编译器
+- [x] 实现指令融合优化 (Instruction Fusion)
+- [x] 实现常量快径优化 (Constant Fast Path)
+- [x] 补全逻辑非 (`!`) 运算符支持
 
 
