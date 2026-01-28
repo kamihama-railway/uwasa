@@ -1,0 +1,25 @@
+name: Uwasa VM Benchmark
+
+on:
+  workflow_dispatch:  # 允许手动触发，避免数据混杂
+  push:
+    paths:
+      - 'vm.go'
+      - 'vm_compiler.go'
+      - 'bytecode.go'
+
+jobs:
+  vm-benchmark:
+    name: VM Performance Bench
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+
+      - name: Run VM benchmarks
+        # 只运行带有 VM 后缀的基准测试
+        run: go test -v -bench=VM$ -benchmem ./...
