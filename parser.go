@@ -20,6 +20,7 @@ const (
 	SUM
 	PRODUCT
 	PREFIX
+	CALL
 )
 
 func getPrecedence(t TokenType) int {
@@ -38,6 +39,8 @@ func getPrecedence(t TokenType) int {
 		return SUM
 	case TokenAsterisk, TokenSlash, TokenPercent:
 		return PRODUCT
+	case TokenLParen:
+		return CALL
 	default:
 		return LOWEST
 	}
@@ -85,6 +88,7 @@ var parserPool = sync.Pool{
 		p.registerInfix(TokenAsterisk, p.parseInfixExpression)
 		p.registerInfix(TokenSlash, p.parseInfixExpression)
 		p.registerInfix(TokenPercent, p.parseInfixExpression)
+		p.registerInfix(TokenLParen, p.parseCallExpression)
 		p.registerInfix(TokenAssign, p.parseAssignExpression)
 
 		return p
@@ -199,6 +203,36 @@ func (p *Parser) parseGroupedExpression() Expression {
 		return nil
 	}
 	return exp
+}
+
+func (p *Parser) parseCallExpression(function Expression) Expression {
+	exp := &CallExpression{Function: function}
+	exp.Arguments = p.parseExpressionList(TokenRParen)
+	return exp
+}
+
+func (p *Parser) parseExpressionList(end TokenType) []Expression {
+	list := []Expression{}
+
+	if p.peekTokenIs(end) {
+		p.nextToken()
+		return list
+	}
+
+	p.nextToken()
+	list = append(list, p.parseExpression(LOWEST))
+
+	for p.peekTokenIs(TokenComma) {
+		p.nextToken()
+		p.nextToken()
+		list = append(list, p.parseExpression(LOWEST))
+	}
+
+	if !p.expectPeek(end) {
+		return nil
+	}
+
+	return list
 }
 
 func (p *Parser) parseAssignExpression(left Expression) Expression {

@@ -115,3 +115,21 @@ func (ae *AssignExpression) expressionNode() {}
 func (ae *AssignExpression) String() string {
 	return "(" + ae.Name.String() + " = " + ae.Value.String() + ")"
 }
+
+type CallExpression struct {
+	Function  Expression
+	Arguments []Expression
+}
+
+func (ce *CallExpression) expressionNode() {}
+func (ce *CallExpression) String() string {
+	out := ce.Function.String() + "("
+	for i, arg := range ce.Arguments {
+		out += arg.String()
+		if i < len(ce.Arguments)-1 {
+			out += ", "
+		}
+	}
+	out += ")"
+	return out
+}

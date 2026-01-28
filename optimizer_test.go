@@ -31,6 +31,9 @@ func TestConstantFolding(t *testing.T) {
 		{"a || false", "a"},
 		{"true && (a = 1)", "(a = 1)"},
 		{"false && (a = 1)", "false"},
+		{`"hello " + "world"`, "hello world"},
+		{`concat("a", "b", "c")`, "abc"},
+		{`concat("v=", 100)`, "v=100"},
 	}
 
 	for _, tt := range tests {

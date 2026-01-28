@@ -3,6 +3,8 @@
 
 package uwasa
 
+import "fmt"
+
 func Fold(node Node) Node {
 	if node == nil {
 		return nil
@@ -33,6 +35,15 @@ func Fold(node Node) Node {
 
 		left, okL := n.Left.(*NumberLiteral)
 		right, okR := n.Right.(*NumberLiteral)
+
+		// Compile-time string concatenation
+		if n.Operator == "+" {
+			leftS, okLS := n.Left.(*StringLiteral)
+			rightS, okRS := n.Right.(*StringLiteral)
+			if okLS && okRS {
+				return &StringLiteral{Value: leftS.Value + rightS.Value}
+			}
+		}
 
 		if okL && okR {
 			switch n.Operator {
@@ -161,6 +172,42 @@ func Fold(node Node) Node {
 				return nil
 			}
 		}
+	case *CallExpression:
+		allConst := true
+		for i, arg := range n.Arguments {
+			folded := Fold(arg)
+			if folded != nil {
+				n.Arguments[i] = folded.(Expression)
+			}
+			if _, ok := n.Arguments[i].(Literal); !ok {
+				// We consider StringLiteral, NumberLiteral, BooleanLiteral as constants
+				// Let's define a Literal interface or check specifically
+				switch n.Arguments[i].(type) {
+				case *StringLiteral, *NumberLiteral, *BooleanLiteral:
+				default:
+					allConst = false
+				}
+			}
+		}
+		// If it's a call to "concat" with all constant arguments, we can fold it
+		if ident, ok := n.Function.(*Identifier); ok && ident.Value == "concat" && allConst {
+			res := ""
+			for _, arg := range n.Arguments {
+				switch a := arg.(type) {
+				case *StringLiteral: res += a.Value
+				case *NumberLiteral:
+					if a.IsInt {
+						res += fmt.Sprintf("%d", a.Int64Value)
+					} else {
+						res += fmt.Sprintf("%g", a.Float64Value)
+					}
+				case *BooleanLiteral:
+					res += fmt.Sprintf("%v", a.Value)
+				}
+			}
+			return &StringLiteral{Value: res}
+		}
+
 	case *AssignExpression:
 		foldedVal := Fold(n.Value)
 		if foldedVal != nil {
@@ -169,6 +216,15 @@ func Fold(node Node) Node {
 	}
 	return node
 }
+
+type Literal interface {
+	Expression
+	isLiteral()
+}
+
+func (n *NumberLiteral) isLiteral()  {}
+func (n *StringLiteral) isLiteral()  {}
+func (n *BooleanLiteral) isLiteral() {}
 
 func getFloatValues(l, r *NumberLiteral) (float64, float64) {
 	var lv, rv float64

@@ -110,6 +110,17 @@ func BenchmarkMixedTypeArithmetic(b *testing.B) {
 	})
 }
 
+func BenchmarkConcatBuiltin(b *testing.B) {
+	input := `concat(s1, " ", s2, " ", s3, " ", s4)`
+	vars := map[string]any{
+		"s1": "the", "s2": "quick", "s3": "brown", "s4": "fox",
+	}
+
+	b.Run("Variables", func(b *testing.B) {
+		benchmarkEngine(b, input, vars, OptBasic)
+	})
+}
+
 func BenchmarkStringConcatenation(b *testing.B) {
 	input := `"hello " + "world" + name`
 	vars := map[string]any{"name": "uwasa"}

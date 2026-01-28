@@ -71,7 +71,9 @@ func main() {
 
 ### 4. 复合运算与赋值
 - **示例**: `total = (price * count) - discount`
-- **字符串操作**: `greeting = "Hello, " + user_name`
+- **字符串操作**:
+    - 基础拼接: `greeting = "Hello, " + user_name`
+    - 高效拼接: `greeting = concat("Hello, ", user_name, "!")` (推荐用于多段拼接)
 
 ---
 

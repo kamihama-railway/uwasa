@@ -4,7 +4,9 @@
 package uwasa
 
 import (
+	"bytes"
 	"fmt"
+	"sync"
 )
 
 var (
@@ -86,6 +88,22 @@ func Eval(node Node, ctx Context) (any, error) {
 		}
 		err = ctx.Set(n.Name.Value, val)
 		return val, err
+	case *CallExpression:
+		args := make([]any, len(n.Arguments))
+		for i, arg := range n.Arguments {
+			val, err := Eval(arg, ctx)
+			if err != nil {
+				return nil, err
+			}
+			args[i] = val
+		}
+		if ident, ok := n.Function.(*Identifier); ok {
+			if builtin, ok := builtins[ident.Value]; ok {
+				return builtin(args...)
+			}
+			return nil, fmt.Errorf("builtin function not found: %s", ident.Value)
+		}
+		return nil, fmt.Errorf("not a function: %s", n.Function.String())
 	}
 	return nil, nil
 }
@@ -193,6 +211,48 @@ func evalComparison(operator string, left, right any) (any, error) {
 	}
 
 	return nil, fmt.Errorf("invalid comparison: %T %s %T", left, operator, right)
+}
+
+var bufferPool = sync.Pool{
+	New: func() any {
+		return new(bytes.Buffer)
+	},
+}
+
+type BuiltinFunc func(args ...any) (any, error)
+
+var builtins = map[string]BuiltinFunc{
+	"concat": func(args ...any) (any, error) {
+		// 1. Pre-calculate total length
+		totalLen := 0
+		argStrings := make([]string, len(args))
+		for i, arg := range args {
+			switch v := arg.(type) {
+			case string:
+				argStrings[i] = v
+			case int64:
+				argStrings[i] = fmt.Sprintf("%d", v)
+			case float64:
+				argStrings[i] = fmt.Sprintf("%g", v)
+			case bool:
+				argStrings[i] = fmt.Sprintf("%v", v)
+			default:
+				argStrings[i] = fmt.Sprintf("%v", v)
+			}
+			totalLen += len(argStrings[i])
+		}
+
+		// 2. Use pooled buffer
+		buf := bufferPool.Get().(*bytes.Buffer)
+		buf.Reset()
+		buf.Grow(totalLen)
+		for _, s := range argStrings {
+			buf.WriteString(s)
+		}
+		res := buf.String()
+		bufferPool.Put(buf)
+		return res, nil
+	},
 }
 
 func toFloat64(v any) (float64, bool) {
