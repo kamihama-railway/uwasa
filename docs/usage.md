@@ -15,13 +15,16 @@ import (
 )
 
 func main() {
-	input := `if user_age >= 18 is "adult" else is "minor"`
+	input := `if user_age >= 18 is concat("User is ", status) else is "Access Denied"`
 	engine, _ := uwasa.NewEngine(input)
 
-	vars := map[string]any{"user_age": 20}
+	vars := map[string]any{
+		"user_age": int64(20),
+		"status":   "Verified",
+	}
 	result, _ := engine.Execute(vars)
 
-	fmt.Printf("User status: %v\n", result) // User status: adult
+	fmt.Printf("Result: %v\n", result) // Result: User is Verified
 }
 ```
 
@@ -38,7 +41,8 @@ func main() {
 
 ### 2. 字符串 (Strings)
 - **书写方式**: 必须使用**双引号**包裹，如 `"hello"`, `"激活"`。
-- **注意**: 目前不支持单引号。字符串可以进行 `+` 运算实现拼接。
+- **内置函数**: 推荐使用 `concat(a, b, ...)` 进行多段高效拼接。
+- **注意**: 目前不支持单引号。
 
 ### 3. 标识符/变量名 (Identifiers)
 - **书写规则**: 以字母或下划线 `_` 开头，后续可跟字母、数字或下划线。
@@ -108,17 +112,15 @@ engine.ExecuteWithContext(&MyContext{})
    `NewEngine` 函数会执行词法分析和语法分析。建议在应用启动时预编译规则，并在运行期间复用 `Engine` 实例。
 
 2. **选择合适的优化等级**:
-   - `OptBasic` (默认): 适用于大多数场景，提供常量折叠。
-   - `UseRecompiler`: 适用于规则中包含大量代数冗余或需要严格静态检查的场景。
+   - `OptBasic` (默认): 开启常量折叠和基本短路折叠。
+   - `UseRecompiler`: 开启激进的代数简化（如 `x - x -> 0`）和静态分析检查。
 
-3. **数值类型提示**:
-   为了触发“快速路径”，请尽量在传入 `vars` 时使用 `int64`。
+3. **数据类型最佳实践**:
+   - **整数**: 请在 `vars` 中显式使用 `int64`。这可以命中引擎的**整数快速路径**，避免任何浮点数转换。
+   - **字符串**: 拼接三段以上字符串时，强制建议使用 `concat(...)` 函数，其性能远高于连续的 `+` 运算。
 
-2. **利用内置对象池**:
-   引擎内部使用了 `sync.Pool`。当你调用 `engine.Execute(vars)` 时，引擎会自动从池中获取上下文并在执行完后归还。这在处理高频规则求值时能显著降低内存抖动。
-
-3. **数值类型提示**:
-   为了计算的统一性，引擎内部会将数值转换为 `float64`。虽然引擎支持自动转换，但在传入 `vars` 时直接使用 `float64` 可以略微提升性能。
+4. **利用内置对象池**:
+   引擎内部深度集成了 `sync.Pool`。当你调用 `engine.Execute(vars)` 时，底层会自动复用 Context。执行完毕后，内部会自动清理并回池，开发者无需手动干预。
 
 4. **短路逻辑优化**:
    在编写包含复杂计算或副作用的条件时，利用 `&&` 的短路特性。将最可能为 `false` 的条件放在左侧。
