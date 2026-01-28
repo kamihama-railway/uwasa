@@ -37,6 +37,7 @@ const (
 	TokenLParen    // (
 	TokenRParen    // )
 	TokenComma     // ,
+	TokenBang      // !
 )
 
 type Token struct {
@@ -145,6 +146,8 @@ func (l *Lexer) NextToken() Token {
 		tok = Token{Type: TokenRParen, Literal: ")"}
 	case ',':
 		tok = Token{Type: TokenComma, Literal: ","}
+	case '!':
+		tok = Token{Type: TokenBang, Literal: "!"}
 	case '"':
 		tok.Type = TokenString
 		tok.Literal = l.readString()
@@ -256,6 +259,7 @@ func (t TokenType) String() string {
 	case TokenLParen: return "("
 	case TokenRParen: return ")"
 	case TokenComma: return ","
+	case TokenBang: return "!"
 	default: return "UNKNOWN"
 	}
 }

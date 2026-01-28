@@ -120,6 +120,8 @@ func evalPrefixExpression(operator string, right any) (any, error) {
 			return -int64(r), nil
 		}
 		return nil, fmt.Errorf("unknown operator: -%T", right)
+	case "!":
+		return boolToAny(!isTruthy(right)), nil
 	default:
 		return nil, fmt.Errorf("unknown operator: %s%T", operator, right)
 	}

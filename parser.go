@@ -73,6 +73,7 @@ var parserPool = sync.Pool{
 		p.registerPrefix(TokenTrue, p.parseBooleanLiteral)
 		p.registerPrefix(TokenFalse, p.parseBooleanLiteral)
 		p.registerPrefix(TokenMinus, p.parsePrefixExpression)
+		p.registerPrefix(TokenBang, p.parsePrefixExpression)
 		p.registerPrefix(TokenLParen, p.parseGroupedExpression)
 		p.registerPrefix(TokenIf, p.parseIfExpression)
 

@@ -20,7 +20,8 @@ type EngineOptions struct {
 }
 
 type Engine struct {
-	program Expression
+	program  Expression
+	bytecode *RenderedBytecode
 }
 
 func NewEngine(input string) (*Engine, error) {
@@ -55,7 +56,33 @@ func NewEngineWithOptions(input string, opts EngineOptions) (*Engine, error) {
 	if optimized == nil {
 		return &Engine{program: nil}, nil
 	}
+
 	return &Engine{program: optimized.(Expression)}, nil
+}
+
+func NewEngineVM(input string) (*Engine, error) {
+	return NewEngineVMWithOptions(input, EngineOptions{OptimizationLevel: OptBasic})
+}
+
+func NewEngineVMWithOptions(input string, opts EngineOptions) (*Engine, error) {
+	l := NewLexer(input)
+	defer lexerPool.Put(l)
+	p := NewParser(l)
+	defer parserPool.Put(p)
+
+	program := p.ParseProgram()
+	if len(p.Errors()) != 0 {
+		return nil, fmt.Errorf("parser errors: %v", p.Errors())
+	}
+
+	c := NewVMCompiler()
+	// VMCompiler will handle its own optimization levels internally
+	bc, err := c.CompileOptimized(program, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Engine{bytecode: bc}, nil
 }
 
 func (e *Engine) Execute(vars map[string]any) (any, error) {
@@ -64,9 +91,15 @@ func (e *Engine) Execute(vars map[string]any) (any, error) {
 		ctx.vars = nil
 		contextPool.Put(ctx)
 	}()
+	if e.bytecode != nil {
+		return RunVM(e.bytecode, ctx)
+	}
 	return Eval(e.program, ctx)
 }
 
 func (e *Engine) ExecuteWithContext(ctx Context) (any, error) {
+	if e.bytecode != nil {
+		return RunVM(e.bytecode, ctx)
+	}
 	return Eval(e.program, ctx)
 }
