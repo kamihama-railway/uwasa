@@ -227,5 +227,10 @@ func walk(node Node, fn func(Node)) {
 		walk(n.Alternative, fn)
 	case *AssignExpression:
 		walk(n.Value, fn)
+	case *CallExpression:
+		walk(n.Function, fn)
+		for _, arg := range n.Arguments {
+			walk(arg, fn)
+		}
 	}
 }
