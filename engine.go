@@ -100,6 +100,10 @@ func NewEngineVMWithOptions(input string, opts EngineOptions) (*Engine, error) {
 		if err != nil {
 			return nil, err
 		}
+		// If the resulting bytecode is just returning a single constant, optimize it
+		if bc != nil && len(bc.Instructions) == 2 && bc.Instructions[0].Op == ROpLoadConst && bc.Instructions[1].Op == ROpReturn {
+			return &Engine{constantResult: bc.Constants[bc.Instructions[0].Arg].ToInterface(), isConstant: true}, nil
+		}
 		return &Engine{registerBytecode: bc}, nil
 	}
 

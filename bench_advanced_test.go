@@ -116,7 +116,7 @@ func BenchmarkOptimizationComparison(b *testing.B) {
 			}
 		})
 		b.Run(sc.name+"/RegisterVM", func(b *testing.B) {
-			engine, err := NewEngineVMWithOptions(sc.input, EngineOptions{UseRegisterVM: true})
+			engine, err := NewEngineVMWithOptions(sc.input, EngineOptions{UseRegisterVM: true, OptimizationLevel: OptBasic})
 			if err != nil {
 				b.Fatalf("NewEngineRegisterVM error: %v", err)
 			}

@@ -14,13 +14,12 @@ func RunRegisterVM(bc *RegisterBytecode, ctx Context) (any, error) {
 		return nil, nil
 	}
 
-	var registers [16]Value
-	var regs []Value
-	if bc.MaxRegisters <= 16 {
-		regs = registers[:bc.MaxRegisters]
-	} else {
-		regs = make([]Value, bc.MaxRegisters)
-	}
+	// Use a fixed size buffer that covers all possible uint8 register indices.
+	// This ensures that single-register instructions (using uint8 indices)
+	// can never trigger a Go panic for out-of-bounds access,
+	// providing memory safety without per-instruction checks in the hot loop.
+	var registers [256]Value
+	regs := registers[:]
 
 	pc := 0
 	insts := bc.Instructions
@@ -230,6 +229,10 @@ func RunRegisterVM(bc *RegisterBytecode, ctx Context) (any, error) {
 			numArgs := int(inst.Src2)
 			argsStart := int(inst.Src1)
 
+			if argsStart+numArgs > len(regs) {
+				return nil, fmt.Errorf("register index out of bounds in CALL")
+			}
+
 			args := make([]any, numArgs)
 			for i := 0; i < numArgs; i++ {
 				args[i] = regs[argsStart+i].ToInterface()
@@ -249,7 +252,16 @@ func RunRegisterVM(bc *RegisterBytecode, ctx Context) (any, error) {
 			numArgs := int(inst.Src2)
 			argsStart := int(inst.Src1)
 			totalLen := 0
-			argStrings := make([]string, numArgs)
+			var argStringsBuf [8]string
+			var argStrings []string
+			if numArgs <= 8 {
+				argStrings = argStringsBuf[:numArgs]
+			} else {
+				argStrings = make([]string, numArgs)
+			}
+			if argsStart+numArgs > len(regs) {
+				return nil, fmt.Errorf("register index out of bounds in CONCAT")
+			}
 			for i := 0; i < numArgs; i++ {
 				v := regs[argsStart+i]
 				var s string

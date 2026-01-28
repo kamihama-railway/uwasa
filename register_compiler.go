@@ -27,37 +27,73 @@ func (c *RegisterCompiler) Compile(node Node) (*RegisterBytecode, error) {
 	if err != nil {
 		return nil, err
 	}
-	c.emit(ROpReturn, 0, finalReg, 0, 0)
-	return &RegisterBytecode{
+	c.emit(ROpReturn, 0, uint8(finalReg), 0, 0)
+
+	bc := &RegisterBytecode{
 		Instructions: c.instructions,
 		Constants:    c.constants,
 		MaxRegisters: c.maxReg + 1,
-	}, nil
+	}
+
+	// Safety check: ensure all instructions are within register bounds
+	for _, inst := range bc.Instructions {
+		switch inst.Op {
+		case ROpCall, ROpConcat:
+			if int(inst.Src1)+int(inst.Src2) > int(bc.MaxRegisters) {
+				return nil, fmt.Errorf("register range out of bounds")
+			}
+			if inst.Dest >= bc.MaxRegisters || inst.Src1 >= bc.MaxRegisters {
+				return nil, fmt.Errorf("register index out of bounds")
+			}
+		case ROpReturn, ROpNot, ROpMove, ROpJumpIfFalse, ROpJumpIfTrue:
+			if inst.Dest >= bc.MaxRegisters || inst.Src1 >= bc.MaxRegisters {
+				return nil, fmt.Errorf("register index out of bounds")
+			}
+		case ROpLoadConst, ROpGetGlobal:
+			if inst.Dest >= bc.MaxRegisters {
+				return nil, fmt.Errorf("register index out of bounds")
+			}
+		case ROpSetGlobal:
+			if inst.Src1 >= bc.MaxRegisters {
+				return nil, fmt.Errorf("register index out of bounds")
+			}
+		case ROpJump:
+			// No registers to check
+		default:
+			if inst.Dest >= bc.MaxRegisters || inst.Src1 >= bc.MaxRegisters || inst.Src2 >= bc.MaxRegisters {
+				return nil, fmt.Errorf("register index out of bounds")
+			}
+		}
+	}
+
+	return bc, nil
 }
 
-func (c *RegisterCompiler) walk(node Node, reg uint8) (uint8, error) {
+func (c *RegisterCompiler) walk(node Node, reg int) (int, error) {
 	if reg > 250 {
 		return 0, fmt.Errorf("register limit exceeded")
 	}
-	if reg > c.maxReg {
-		c.maxReg = reg
+	if uint8(reg) > c.maxReg {
+		c.maxReg = uint8(reg)
 	}
+
+	uReg := uint8(reg)
 
 	switch n := node.(type) {
 	case *Identifier:
-		c.emit(ROpGetGlobal, reg, 0, 0, c.addConstant(Value{Type: ValString, Str: n.Value}))
+		c.emit(ROpGetGlobal, uReg, 0, 0, c.addConstant(Value{Type: ValString, Str: n.Value}))
 		return reg, nil
 
 	case *NumberLiteral:
 		if n.IsInt {
-			c.emit(ROpLoadConst, reg, 0, 0, c.addConstant(Value{Type: ValInt, Num: uint64(n.Int64Value)}))
+			c.emit(ROpLoadConst, uReg, 0, 0, c.addConstant(Value{Type: ValInt, Num: uint64(n.Int64Value)}))
 		} else {
-			c.emit(ROpLoadConst, reg, 0, 0, c.addConstant(Value{Type: ValFloat, Num: math.Float64bits(n.Float64Value)}))
+			c.emit(ROpLoadConst, uReg, 0, 0, c.addConstant(Value{Type: ValFloat, Num: math.Float64bits(n.Float64Value)}))
 		}
 		return reg, nil
 
 	case *StringLiteral:
-		c.emit(ROpLoadConst, reg, 0, 0, c.addConstant(Value{Type: ValString, Str: n.Value}))
+		c.emit(ROpLoadConst, uReg, 0, 0, c.addConstant(Value{Type: ValString, Str: n.Value}))
 		return reg, nil
 
 	case *BooleanLiteral:
@@ -65,24 +101,24 @@ func (c *RegisterCompiler) walk(node Node, reg uint8) (uint8, error) {
 		if n.Value {
 			val = 1
 		}
-		c.emit(ROpLoadConst, reg, 0, 0, c.addConstant(Value{Type: ValBool, Num: val}))
+		c.emit(ROpLoadConst, uReg, 0, 0, c.addConstant(Value{Type: ValBool, Num: val}))
 		return reg, nil
 
 	case *PrefixExpression:
 		if n.Operator == "-" {
-			c.emit(ROpLoadConst, reg, 0, 0, c.addConstant(Value{Type: ValInt, Num: 0}))
+			c.emit(ROpLoadConst, uReg, 0, 0, c.addConstant(Value{Type: ValInt, Num: 0}))
 			_, err := c.walk(n.Right, reg+1)
 			if err != nil {
 				return 0, err
 			}
-			c.emit(ROpSub, reg, reg, reg+1, 0)
+			c.emit(ROpSub, uReg, uReg, uint8(reg+1), 0)
 			return reg, nil
 		} else if n.Operator == "!" {
 			_, err := c.walk(n.Right, reg)
 			if err != nil {
 				return 0, err
 			}
-			c.emit(ROpNot, reg, reg, 0, 0)
+			c.emit(ROpNot, uReg, uReg, 0, 0)
 			return reg, nil
 		}
 
@@ -92,17 +128,17 @@ func (c *RegisterCompiler) walk(node Node, reg uint8) (uint8, error) {
 			if err != nil {
 				return 0, err
 			}
-			jumpFalse := c.emit(ROpJumpIfFalse, 0, reg, 0, 0)
+			jumpFalse := c.emit(ROpJumpIfFalse, 0, uReg, 0, 0)
 			_, err = c.walk(n.Right, reg)
 			if err != nil {
 				return 0, err
 			}
 			// ensure result is boolean 0/1
-			c.emit(ROpNot, reg, reg, 0, 0)
-			c.emit(ROpNot, reg, reg, 0, 0)
+			c.emit(ROpNot, uReg, uReg, 0, 0)
+			c.emit(ROpNot, uReg, uReg, 0, 0)
 			jumpEnd := c.emit(ROpJump, 0, 0, 0, 0)
 			c.patch(jumpFalse, int32(len(c.instructions)))
-			c.emit(ROpLoadConst, reg, 0, 0, c.addConstant(Value{Type: ValBool, Num: 0}))
+			c.emit(ROpLoadConst, uReg, 0, 0, c.addConstant(Value{Type: ValBool, Num: 0}))
 			c.patch(jumpEnd, int32(len(c.instructions)))
 			return reg, nil
 		}
@@ -111,69 +147,59 @@ func (c *RegisterCompiler) walk(node Node, reg uint8) (uint8, error) {
 			if err != nil {
 				return 0, err
 			}
-			jumpTrue := c.emit(ROpJumpIfTrue, 0, reg, 0, 0)
+			jumpTrue := c.emit(ROpJumpIfTrue, 0, uReg, 0, 0)
 			_, err = c.walk(n.Right, reg)
 			if err != nil {
 				return 0, err
 			}
 			// ensure result is boolean 0/1
-			c.emit(ROpNot, reg, reg, 0, 0)
-			c.emit(ROpNot, reg, reg, 0, 0)
+			c.emit(ROpNot, uReg, uReg, 0, 0)
+			c.emit(ROpNot, uReg, uReg, 0, 0)
 			jumpEnd := c.emit(ROpJump, 0, 0, 0, 0)
 			c.patch(jumpTrue, int32(len(c.instructions)))
-			c.emit(ROpLoadConst, reg, 0, 0, c.addConstant(Value{Type: ValBool, Num: 1}))
+			c.emit(ROpLoadConst, uReg, 0, 0, c.addConstant(Value{Type: ValBool, Num: 1}))
 			c.patch(jumpEnd, int32(len(c.instructions)))
 			return reg, nil
 		}
 
-		leftReg, err := c.walk(n.Left, reg)
+		lReg, err := c.walk(n.Left, reg)
 		if err != nil {
 			return 0, err
 		}
-		rightReg, err := c.walk(n.Right, reg+1)
+		rReg, err := c.walk(n.Right, reg+1)
 		if err != nil {
 			return 0, err
 		}
 
 		var op ROpCode
 		switch n.Operator {
-		case "+":
-			op = ROpAdd
-		case "-":
-			op = ROpSub
-		case "*":
-			op = ROpMul
-		case "/":
-			op = ROpDiv
-		case "%":
-			op = ROpMod
-		case "==":
-			op = ROpEqual
-		case ">":
-			op = ROpGreater
-		case "<":
-			op = ROpLess
-		case ">=":
-			op = ROpGreaterEqual
-		case "<=":
-			op = ROpLessEqual
+		case "+": op = ROpAdd
+		case "-": op = ROpSub
+		case "*": op = ROpMul
+		case "/": op = ROpDiv
+		case "%": op = ROpMod
+		case "==": op = ROpEqual
+		case ">": op = ROpGreater
+		case "<": op = ROpLess
+		case ">=": op = ROpGreaterEqual
+		case "<=": op = ROpLessEqual
 		default:
 			return 0, fmt.Errorf("unknown operator: %s", n.Operator)
 		}
-		c.emit(op, reg, leftReg, rightReg, 0)
+		c.emit(op, uReg, uint8(lReg), uint8(rReg), 0)
 		return reg, nil
 
 	case *IfExpression:
-		condReg, err := c.walk(n.Condition, reg)
+		cReg, err := c.walk(n.Condition, reg)
 		if err != nil {
 			return 0, err
 		}
 
 		if n.IsSimple {
-			return condReg, nil
+			return cReg, nil
 		}
 
-		jumpFalse := c.emit(ROpJumpIfFalse, 0, condReg, 0, 0)
+		jumpFalse := c.emit(ROpJumpIfFalse, 0, uint8(cReg), 0, 0)
 		_, err = c.walk(n.Consequence, reg)
 		if err != nil {
 			return 0, err
@@ -188,39 +214,39 @@ func (c *RegisterCompiler) walk(node Node, reg uint8) (uint8, error) {
 				return 0, err
 			}
 		} else {
-			c.emit(ROpLoadConst, reg, 0, 0, c.addConstant(Value{Type: ValNil}))
+			c.emit(ROpLoadConst, uReg, 0, 0, c.addConstant(Value{Type: ValNil}))
 		}
 		c.patch(jumpEnd, int32(len(c.instructions)))
 		return reg, nil
 
 	case *AssignExpression:
-		valReg, err := c.walk(n.Value, reg)
+		vReg, err := c.walk(n.Value, reg)
 		if err != nil {
 			return 0, err
 		}
-		c.emit(ROpSetGlobal, 0, valReg, 0, c.addConstant(Value{Type: ValString, Str: n.Name.Value}))
-		return valReg, nil
+		c.emit(ROpSetGlobal, 0, uint8(vReg), 0, c.addConstant(Value{Type: ValString, Str: n.Name.Value}))
+		return vReg, nil
 
 	case *CallExpression:
 		if ident, ok := n.Function.(*Identifier); ok && ident.Value == "concat" {
 			for i, arg := range n.Arguments {
-				_, err := c.walk(arg, reg+uint8(i))
+				_, err := c.walk(arg, reg+i)
 				if err != nil {
 					return 0, err
 				}
 			}
-			c.emit(ROpConcat, reg, reg, uint8(len(n.Arguments)), 0)
+			c.emit(ROpConcat, uReg, uReg, uint8(len(n.Arguments)), 0)
 			return reg, nil
 		}
 
 		for i, arg := range n.Arguments {
-			_, err := c.walk(arg, reg+uint8(i+1))
+			_, err := c.walk(arg, reg+i+1)
 			if err != nil {
 				return 0, err
 			}
 		}
 		if ident, ok := n.Function.(*Identifier); ok {
-			c.emit(ROpCall, reg, reg+1, uint8(len(n.Arguments)), c.addConstant(Value{Type: ValString, Str: ident.Value}))
+			c.emit(ROpCall, uReg, uint8(reg+1), uint8(len(n.Arguments)), c.addConstant(Value{Type: ValString, Str: ident.Value}))
 		} else {
 			return 0, fmt.Errorf("calling non-identifier functions not supported in Register VM yet")
 		}
