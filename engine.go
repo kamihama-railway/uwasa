@@ -17,10 +17,12 @@ const (
 type EngineOptions struct {
 	OptimizationLevel OptimizationLevel
 	UseRecompiler     bool
+	UseVM             bool
 }
 
 type Engine struct {
-	program Expression
+	program  Expression
+	bytecode *Bytecode
 }
 
 func NewEngine(input string) (*Engine, error) {
@@ -55,7 +57,21 @@ func NewEngineWithOptions(input string, opts EngineOptions) (*Engine, error) {
 	if optimized == nil {
 		return &Engine{program: nil}, nil
 	}
-	return &Engine{program: optimized.(Expression)}, nil
+
+	var bc *Bytecode
+	if opts.UseVM {
+		comp := NewCompiler()
+		err := comp.Compile(optimized)
+		if err != nil {
+			return nil, err
+		}
+		bc = comp.Bytecode()
+	}
+
+	return &Engine{
+		program:  optimized.(Expression),
+		bytecode: bc,
+	}, nil
 }
 
 func (e *Engine) Execute(vars map[string]any) (any, error) {
@@ -64,9 +80,14 @@ func (e *Engine) Execute(vars map[string]any) (any, error) {
 		ctx.vars = nil
 		contextPool.Put(ctx)
 	}()
-	return Eval(e.program, ctx)
+	return e.ExecuteWithContext(ctx)
 }
 
 func (e *Engine) ExecuteWithContext(ctx Context) (any, error) {
+	if e.bytecode != nil {
+		vm := NewVM(e.bytecode)
+		defer vm.Free()
+		return vm.Run(ctx)
+	}
 	return Eval(e.program, ctx)
 }
