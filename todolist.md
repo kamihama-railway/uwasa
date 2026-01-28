@@ -22,5 +22,8 @@
 - [x] 实现内置函数系统及高性能 concat 函数
 - [x] 完善全等级性能对比 Benchmark
 - [x] 深度细化全套技术文档
+- [x] 实现基于字节码的虚拟机 (VM) 子引擎
+- [x] 实现无装箱 (Unboxed) 的 `Value` 类型表示
+- [x] 实现指令融合 (Instruction Fusion) 与变量索引化优化
 
 

@@ -4,6 +4,7 @@
 package uwasa
 
 import (
+	"fmt"
 	"math"
 )
 
@@ -42,6 +43,9 @@ func (v Value) ToAny() any {
 }
 
 func FromAny(a any) Value {
+	if a == nil {
+		return Value{kind: valNil}
+	}
 	switch v := a.(type) {
 	case int64:
 		return Value{kind: valInt, num: uint64(v)}
@@ -56,21 +60,9 @@ func FromAny(a any) Value {
 		return Value{kind: valBool, num: 0}
 	case string:
 		return Value{kind: valString, ptr: v}
-	case nil:
-		return Value{kind: valNil}
 	default:
 		return Value{kind: valAny, ptr: v}
 	}
-}
-
-func (v Value) toFloat() (float64, bool) {
-	if v.kind == valFloat {
-		return math.Float64frombits(v.num), true
-	}
-	if v.kind == valInt {
-		return float64(int64(v.num)), true
-	}
-	return 0, false
 }
 
 type vmInstruction struct {
@@ -81,12 +73,13 @@ type vmInstruction struct {
 }
 
 type RenderedBytecode struct {
-	Instructions []vmInstruction
-	Constants    []Value
+	Instructions  []vmInstruction
+	Constants     []Value
+	VariableNames []string
 }
 
 func RunVM(rendered *RenderedBytecode, ctx Context) (any, error) {
-	var staticStack [64]Value
+	var staticStack [128]Value
 	stack := staticStack[:]
 	sp := 0
 	ip := 0
@@ -98,6 +91,26 @@ func RunVM(rendered *RenderedBytecode, ctx Context) (any, error) {
 		mapCtx = m
 	}
 
+	var staticVars [16]Value
+	var vars []Value
+	if len(rendered.VariableNames) <= 16 {
+		vars = staticVars[:len(rendered.VariableNames)]
+	} else {
+		vars = make([]Value, len(rendered.VariableNames))
+	}
+
+	for i, name := range rendered.VariableNames {
+		var val any
+		if mapCtx != nil {
+			val = mapCtx.vars[name]
+		} else {
+			val, _ = ctx.Get(name)
+		}
+		vars[i] = FromAny(val)
+	}
+
+	hasSideEffects := false
+
 	for ip < len(ins) {
 		inst := ins[ip]
 		op := inst.op
@@ -107,94 +120,245 @@ func RunVM(rendered *RenderedBytecode, ctx Context) (any, error) {
 			stack[sp] = consts[inst.arg1]; sp++
 		case OpPop:
 			if sp > 0 { sp-- }
+
 		case OpAdd:
 			r := stack[sp-1]; l := stack[sp-2]; sp--
 			if l.kind == valInt && r.kind == valInt {
 				stack[sp-1] = Value{kind: valInt, num: uint64(int64(l.num) + int64(r.num))}
+			} else if l.kind == valFloat && r.kind == valFloat {
+				stack[sp-1] = Value{kind: valFloat, num: math.Float64bits(math.Float64frombits(l.num) + math.Float64frombits(r.num))}
+			} else if l.kind == valString && r.kind == valString {
+				stack[sp-1] = Value{kind: valString, ptr: l.ptr.(string) + r.ptr.(string)}
 			} else {
-				stack[sp-1] = valArithmetic("+", l, r)
+				res, err := evalArithmetic("+", l.ToAny(), r.ToAny())
+				if err != nil { return nil, err }
+				stack[sp-1] = FromAny(res)
 			}
+		case OpAddGlobal:
+			l := stack[sp-1]; r := vars[inst.arg1]
+			if l.kind == valInt && r.kind == valInt {
+				stack[sp-1] = Value{kind: valInt, num: uint64(int64(l.num) + int64(r.num))}
+			} else {
+				res, err := evalArithmetic("+", l.ToAny(), r.ToAny())
+				if err != nil { return nil, err }
+				stack[sp-1] = FromAny(res)
+			}
+		case OpAddConst:
+			l := stack[sp-1]; r := consts[inst.arg1]
+			if l.kind == valInt && r.kind == valInt {
+				stack[sp-1] = Value{kind: valInt, num: uint64(int64(l.num) + int64(r.num))}
+			} else {
+				res, err := evalArithmetic("+", l.ToAny(), r.ToAny())
+				if err != nil { return nil, err }
+				stack[sp-1] = FromAny(res)
+			}
+
 		case OpSub:
 			r := stack[sp-1]; l := stack[sp-2]; sp--
 			if l.kind == valInt && r.kind == valInt {
 				stack[sp-1] = Value{kind: valInt, num: uint64(int64(l.num) - int64(r.num))}
 			} else {
-				stack[sp-1] = valArithmetic("-", l, r)
+				res, err := evalArithmetic("-", l.ToAny(), r.ToAny())
+				if err != nil { return nil, err }
+				stack[sp-1] = FromAny(res)
 			}
+		case OpSubGlobal:
+			l := stack[sp-1]; r := vars[inst.arg1]
+			if l.kind == valInt && r.kind == valInt {
+				stack[sp-1] = Value{kind: valInt, num: uint64(int64(l.num) - int64(r.num))}
+			} else {
+				res, err := evalArithmetic("-", l.ToAny(), r.ToAny())
+				if err != nil { return nil, err }
+				stack[sp-1] = FromAny(res)
+			}
+		case OpSubConst:
+			l := stack[sp-1]; r := consts[inst.arg1]
+			if l.kind == valInt && r.kind == valInt {
+				stack[sp-1] = Value{kind: valInt, num: uint64(int64(l.num) - int64(r.num))}
+			} else {
+				res, err := evalArithmetic("-", l.ToAny(), r.ToAny())
+				if err != nil { return nil, err }
+				stack[sp-1] = FromAny(res)
+			}
+
 		case OpMul:
 			r := stack[sp-1]; l := stack[sp-2]; sp--
 			if l.kind == valInt && r.kind == valInt {
 				stack[sp-1] = Value{kind: valInt, num: uint64(int64(l.num) * int64(r.num))}
 			} else {
-				stack[sp-1] = valArithmetic("*", l, r)
-			}
-		case OpDiv:
-			r := stack[sp-1]; l := stack[sp-2]; sp--
-			stack[sp-1] = valArithmetic("/", l, r)
-		case OpMod:
-			r := stack[sp-1]; l := stack[sp-2]; sp--
-			stack[sp-1] = valArithmetic("%", l, r)
-		case OpEqual:
-			r := stack[sp-1]; l := stack[sp-2]; sp--
-			if l.kind == r.kind && l.num == r.num && l.ptr == r.ptr {
-				stack[sp-1] = Value{kind: valBool, num: 1}
-			} else {
-				stack[sp-1] = valCompare("==", l, r)
-			}
-		case OpEqualConst:
-			l := stack[sp-1]; r := consts[inst.arg1]
-			if l.kind == r.kind && l.num == r.num && l.ptr == r.ptr {
-				stack[sp-1] = Value{kind: valBool, num: 1}
-			} else {
-				stack[sp-1] = valCompare("==", l, r)
-			}
-		case OpGreater:
-			r := stack[sp-1]; l := stack[sp-2]; sp--
-			stack[sp-1] = valCompare(">", l, r)
-		case OpGreaterConst:
-			l := stack[sp-1]; r := consts[inst.arg1]
-			stack[sp-1] = valCompare(">", l, r)
-		case OpLess:
-			r := stack[sp-1]; l := stack[sp-2]; sp--
-			stack[sp-1] = valCompare("<", l, r)
-		case OpLessConst:
-			l := stack[sp-1]; r := consts[inst.arg1]
-			stack[sp-1] = valCompare("<", l, r)
-		case OpGreaterEqual:
-			r := stack[sp-1]; l := stack[sp-2]; sp--
-			stack[sp-1] = valCompare(">=", l, r)
-		case OpGreaterEqualConst:
-			l := stack[sp-1]; r := consts[inst.arg1]
-			stack[sp-1] = valCompare(">=", l, r)
-		case OpLessEqual:
-			r := stack[sp-1]; l := stack[sp-2]; sp--
-			stack[sp-1] = valCompare("<=", l, r)
-		case OpLessEqualConst:
-			l := stack[sp-1]; r := consts[inst.arg1]
-			stack[sp-1] = valCompare("<=", l, r)
-		case OpMinus:
-			r := stack[sp-1]
-			if r.kind == valInt {
-				stack[sp-1] = Value{kind: valInt, num: uint64(-int64(r.num))}
-			} else if r.kind == valFloat {
-				stack[sp-1] = Value{kind: valFloat, num: math.Float64bits(-math.Float64frombits(r.num))}
-			} else {
-				res, _ := evalPrefixExpression("-", r.ToAny())
+				res, err := evalArithmetic("*", l.ToAny(), r.ToAny())
+				if err != nil { return nil, err }
 				stack[sp-1] = FromAny(res)
 			}
+		case OpMulGlobal:
+			l := stack[sp-1]; r := vars[inst.arg1]
+			if l.kind == valInt && r.kind == valInt {
+				stack[sp-1] = Value{kind: valInt, num: uint64(int64(l.num) * int64(r.num))}
+			} else {
+				res, err := evalArithmetic("*", l.ToAny(), r.ToAny())
+				if err != nil { return nil, err }
+				stack[sp-1] = FromAny(res)
+			}
+		case OpMulConst:
+			l := stack[sp-1]; r := consts[inst.arg1]
+			if l.kind == valInt && r.kind == valInt {
+				stack[sp-1] = Value{kind: valInt, num: uint64(int64(l.num) * int64(r.num))}
+			} else {
+				res, err := evalArithmetic("*", l.ToAny(), r.ToAny())
+				if err != nil { return nil, err }
+				stack[sp-1] = FromAny(res)
+			}
+
+		case OpDiv:
+			r := stack[sp-1]; l := stack[sp-2]; sp--
+			if r.kind == valInt && l.kind == valInt {
+				if r.num == 0 { return nil, fmt.Errorf("division by zero") }
+				stack[sp-1] = Value{kind: valInt, num: uint64(int64(l.num) / int64(r.num))}
+			} else {
+				res, err := evalArithmetic("/", l.ToAny(), r.ToAny())
+				if err != nil { return nil, err }
+				stack[sp-1] = FromAny(res)
+			}
+		case OpDivGlobal:
+			l := stack[sp-1]; r := vars[inst.arg1]
+			if l.kind == valInt && r.kind == valInt {
+				if r.num == 0 { return nil, fmt.Errorf("division by zero") }
+				stack[sp-1] = Value{kind: valInt, num: uint64(int64(l.num) / int64(r.num))}
+			} else {
+				res, err := evalArithmetic("/", l.ToAny(), r.ToAny())
+				if err != nil { return nil, err }
+				stack[sp-1] = FromAny(res)
+			}
+		case OpDivConst:
+			l := stack[sp-1]; r := consts[inst.arg1]
+			if l.kind == valInt && r.kind == valInt {
+				if r.num == 0 { return nil, fmt.Errorf("division by zero") }
+				stack[sp-1] = Value{kind: valInt, num: uint64(int64(l.num) / int64(r.num))}
+			} else {
+				res, err := evalArithmetic("/", l.ToAny(), r.ToAny())
+				if err != nil { return nil, err }
+				stack[sp-1] = FromAny(res)
+			}
+
+		case OpMod:
+			r := stack[sp-1]; l := stack[sp-2]; sp--
+			res, err := evalArithmetic("%", l.ToAny(), r.ToAny())
+			if err != nil { return nil, err }
+			stack[sp-1] = FromAny(res)
+
+		case OpMinus:
+			l := stack[sp-1]
+			if l.kind == valInt {
+				stack[sp-1] = Value{kind: valInt, num: uint64(-int64(l.num))}
+			} else if l.kind == valFloat {
+				stack[sp-1] = Value{kind: valFloat, num: math.Float64bits(-math.Float64frombits(l.num))}
+			} else {
+				res, err := evalPrefixExpression("-", l.ToAny())
+				if err != nil { return nil, err }
+				stack[sp-1] = FromAny(res)
+			}
+
+		case OpEqual:
+			r := stack[sp-1]; l := stack[sp-2]; sp--
+			res := false
+			if l.kind == r.kind && l.num == r.num && l.ptr == r.ptr {
+				res = true
+			} else {
+				val, _ := evalComparison("==", l.ToAny(), r.ToAny())
+				res = val.(bool)
+			}
+			if res { stack[sp-1] = Value{kind: valBool, num: 1} } else { stack[sp-1] = Value{kind: valBool, num: 0} }
+
+		case OpEqualConst:
+			l := stack[sp-1]; r := consts[inst.arg1]
+			res := false
+			if l.kind == r.kind && l.num == r.num && l.ptr == r.ptr {
+				res = true
+			} else {
+				val, _ := evalComparison("==", l.ToAny(), r.ToAny())
+				res = val.(bool)
+			}
+			if res { stack[sp-1] = Value{kind: valBool, num: 1} } else { stack[sp-1] = Value{kind: valBool, num: 0} }
+
+		case OpGreater:
+			r := stack[sp-1]; l := stack[sp-2]; sp--
+			res := false
+			if l.kind == valInt && r.kind == valInt {
+				res = int64(l.num) > int64(r.num)
+			} else {
+				val, _ := evalComparison(">", l.ToAny(), r.ToAny())
+				res = val.(bool)
+			}
+			if res { stack[sp-1] = Value{kind: valBool, num: 1} } else { stack[sp-1] = Value{kind: valBool, num: 0} }
+
+		case OpGreaterConst:
+			l := stack[sp-1]; r := consts[inst.arg1]
+			res := false
+			if l.kind == valInt && r.kind == valInt {
+				res = int64(l.num) > int64(r.num)
+			} else {
+				val, _ := evalComparison(">", l.ToAny(), r.ToAny())
+				res = val.(bool)
+			}
+			if res { stack[sp-1] = Value{kind: valBool, num: 1} } else { stack[sp-1] = Value{kind: valBool, num: 0} }
+
+		case OpLess:
+			r := stack[sp-1]; l := stack[sp-2]; sp--
+			res := false
+			if l.kind == valInt && r.kind == valInt {
+				res = int64(l.num) < int64(r.num)
+			} else {
+				val, _ := evalComparison("<", l.ToAny(), r.ToAny())
+				res = val.(bool)
+			}
+			if res { stack[sp-1] = Value{kind: valBool, num: 1} } else { stack[sp-1] = Value{kind: valBool, num: 0} }
+
+		case OpLessConst:
+			l := stack[sp-1]; r := consts[inst.arg1]
+			res := false
+			if l.kind == valInt && r.kind == valInt {
+				res = int64(l.num) < int64(r.num)
+			} else {
+				val, _ := evalComparison("<", l.ToAny(), r.ToAny())
+				res = val.(bool)
+			}
+			if res { stack[sp-1] = Value{kind: valBool, num: 1} } else { stack[sp-1] = Value{kind: valBool, num: 0} }
+
+		case OpGreaterEqual:
+			r := stack[sp-1]; l := stack[sp-2]; sp--
+			val, _ := evalComparison(">=", l.ToAny(), r.ToAny())
+			if val.(bool) { stack[sp-1] = Value{kind: valBool, num: 1} } else { stack[sp-1] = Value{kind: valBool, num: 0} }
+
+		case OpLessEqual:
+			r := stack[sp-1]; l := stack[sp-2]; sp--
+			val, _ := evalComparison("<=", l.ToAny(), r.ToAny())
+			if val.(bool) { stack[sp-1] = Value{kind: valBool, num: 1} } else { stack[sp-1] = Value{kind: valBool, num: 0} }
+
+		case OpGreaterEqualConst:
+			l := stack[sp-1]; r := consts[inst.arg1]
+			val, _ := evalComparison(">=", l.ToAny(), r.ToAny())
+			if val.(bool) { stack[sp-1] = Value{kind: valBool, num: 1} } else { stack[sp-1] = Value{kind: valBool, num: 0} }
+
+		case OpLessEqualConst:
+			l := stack[sp-1]; r := consts[inst.arg1]
+			val, _ := evalComparison("<=", l.ToAny(), r.ToAny())
+			if val.(bool) { stack[sp-1] = Value{kind: valBool, num: 1} } else { stack[sp-1] = Value{kind: valBool, num: 0} }
+
 		case OpGetGlobal:
-			name := consts[inst.arg1].ptr.(string)
-			var val any
-			if mapCtx != nil { val = mapCtx.vars[name] } else { val, _ = ctx.Get(name) }
-			stack[sp] = FromAny(val); sp++
+			stack[sp] = vars[inst.arg1]; sp++
 		case OpSetGlobal:
-			name := consts[inst.arg1].ptr.(string)
-			val := stack[sp-1]
-			_ = ctx.Set(name, val.ToAny())
+			vars[inst.arg1] = stack[sp-1]
+			hasSideEffects = true
+
 		case OpJump:
 			ip = int(inst.arg1) - 1
 		case OpJumpIfFalse:
 			cond := stack[sp-1]
+			isTruthy := true
+			if cond.kind == valBool { isTruthy = cond.num != 0 } else if cond.kind == valNil { isTruthy = false }
+			if !isTruthy { ip = int(inst.arg1) - 1 }
+		case OpJumpIfFalsePop:
+			cond := stack[sp-1]; sp--
 			isTruthy := true
 			if cond.kind == valBool { isTruthy = cond.num != 0 } else if cond.kind == valNil { isTruthy = false }
 			if !isTruthy { ip = int(inst.arg1) - 1 }
@@ -204,7 +368,11 @@ func RunVM(rendered *RenderedBytecode, ctx Context) (any, error) {
 			if cond.kind == valBool { isTruthy = cond.num != 0 } else if cond.kind == valNil { isTruthy = false }
 			if isTruthy { ip = int(inst.arg1) - 1 }
 		case OpToBool:
-			if isTruthyValue(stack[sp-1]) { stack[sp-1] = Value{kind: valBool, num: 1} } else { stack[sp-1] = Value{kind: valBool, num: 0} }
+			cond := stack[sp-1]
+			isTruthy := true
+			if cond.kind == valBool { isTruthy = cond.num != 0 } else if cond.kind == valNil { isTruthy = false }
+			if isTruthy { stack[sp-1] = Value{kind: valBool, num: 1} } else { stack[sp-1] = Value{kind: valBool, num: 0} }
+
 		case OpCall:
 			numArgs := int(inst.arg1)
 			funcName := stack[sp-1].ptr.(string); sp--
@@ -212,85 +380,34 @@ func RunVM(rendered *RenderedBytecode, ctx Context) (any, error) {
 			var args []any
 			if numArgs <= 8 { args = staticArgs[:numArgs] } else { args = make([]any, numArgs) }
 			for i := numArgs - 1; i >= 0; i-- { args[i] = stack[sp-1].ToAny(); sp-- }
-			builtin, _ := builtins[funcName]
-			res, _ := builtin(args...)
+			builtin, ok := builtins[funcName]
+			if !ok { return nil, fmt.Errorf("builtin function %s not found", funcName) }
+			res, err := builtin(args...)
+			if err != nil { return nil, err }
 			stack[sp] = FromAny(res); sp++
+
 		case OpFusedCompareGlobalConstJumpIfFalse:
-			name := consts[inst.arg1].ptr.(string)
-			var val any
-			if mapCtx != nil { val = mapCtx.vars[name] } else { val, _ = ctx.Get(name) }
-			l := FromAny(val); r := consts[inst.arg2]
-			if valCompare("==", l, r).num == 0 { ip = int(inst.arg3) - 1 }
-		case OpAddGlobal:
-			l := stack[sp-1]
-			name := consts[inst.arg1].ptr.(string)
-			var val any
-			if mapCtx != nil { val = mapCtx.vars[name] } else { val, _ = ctx.Get(name) }
-			r := FromAny(val)
-			if l.kind == valInt && r.kind == valInt {
-				stack[sp-1] = Value{kind: valInt, num: uint64(int64(l.num) + int64(r.num))}
+			l := vars[inst.arg1]; r := consts[inst.arg2]
+			res := false
+			if l.kind == r.kind && l.num == r.num && l.ptr == r.ptr {
+				res = true
 			} else {
-				stack[sp-1] = valArithmetic("+", l, r)
+				val, _ := evalComparison("==", l.ToAny(), r.ToAny())
+				res = val.(bool)
 			}
+			if !res { ip = int(inst.arg3) - 1 }
+
+		default:
 		}
 		ip++
 	}
+
+	if hasSideEffects {
+		for i, name := range rendered.VariableNames {
+			_ = ctx.Set(name, vars[i].ToAny())
+		}
+	}
+
 	if sp == 0 { return nil, nil }
 	return stack[sp-1].ToAny(), nil
-}
-
-func valArithmetic(op string, l, r Value) Value {
-	if l.kind == valInt && r.kind == valInt {
-		lv, rv := int64(l.num), int64(r.num)
-		switch op {
-		case "+": return Value{kind: valInt, num: uint64(lv + rv)}
-		case "-": return Value{kind: valInt, num: uint64(lv - rv)}
-		case "*": return Value{kind: valInt, num: uint64(lv * rv)}
-		case "/": if rv == 0 { return Value{kind: valNil} }; return Value{kind: valInt, num: uint64(lv / rv)}
-		case "%": if rv == 0 { return Value{kind: valNil} }; return Value{kind: valInt, num: uint64(lv % rv)}
-		}
-	}
-	if l.kind == valString && r.kind == valString && op == "+" {
-		return Value{kind: valString, ptr: l.ptr.(string) + r.ptr.(string)}
-	}
-	res, _ := evalArithmetic(op, l.ToAny(), r.ToAny())
-	return FromAny(res)
-}
-
-func valCompare(op string, l, r Value) Value {
-	if l.kind == valInt && r.kind == valInt {
-		lv, rv := int64(l.num), int64(r.num)
-		var res bool
-		switch op {
-		case "==": res = lv == rv
-		case ">":  res = lv > rv
-		case "<":  res = lv < rv
-		case ">=": res = lv >= rv
-		case "<=": res = lv <= rv
-		}
-		if res { return Value{kind: valBool, num: 1} }
-		return Value{kind: valBool, num: 0}
-	}
-	if fl, okL := l.toFloat(); okL {
-		if fr, okR := r.toFloat(); okR {
-			var res bool
-			switch op {
-			case "==": res = fl == fr
-			case ">":  res = fl > fr
-			case "<":  res = fl < fr
-			case ">=": res = fl >= fr
-			case "<=": res = fl <= fr
-			}
-			if res { return Value{kind: valBool, num: 1} }
-			return Value{kind: valBool, num: 0}
-		}
-	}
-	res, _ := evalComparison(op, l.ToAny(), r.ToAny())
-	return FromAny(res)
-}
-
-func isTruthyValue(v Value) bool {
-	if v.kind == valBool { return v.num != 0 }
-	if v.kind == valNil { return false }
-	return true
 }

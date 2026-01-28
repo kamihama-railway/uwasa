@@ -44,6 +44,10 @@ const (
 	OpSubGlobal
 	OpMulGlobal
 	OpDivGlobal
+	OpAddConst
+	OpSubConst
+	OpMulConst
+	OpDivConst
 )
 
 type Definition struct {
@@ -84,6 +88,10 @@ var definitions = map[OpCode]*Definition{
 	OpSubGlobal: {"OpSubGlobal", []int{2}},
 	OpMulGlobal: {"OpMulGlobal", []int{2}},
 	OpDivGlobal: {"OpDivGlobal", []int{2}},
+	OpAddConst:  {"OpAddConst", []int{2}},
+	OpSubConst:  {"OpSubConst", []int{2}},
+	OpMulConst:  {"OpMulConst", []int{2}},
+	OpDivConst:  {"OpDivConst", []int{2}},
 }
 
 func Lookup(op byte) (*Definition, error) {

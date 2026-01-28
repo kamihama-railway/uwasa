@@ -7,6 +7,8 @@ Uwasa 是一个为高性能、高动态性场景设计的规则引擎。它实�
 ## 特性
 
 - **极致性能**:
+    - **字节码虚拟机 (VM)**: 引入基于栈的虚拟机，通过指令融合 (Instruction Fusion) 和变量索引化极大降低运行开销。
+    - **无装箱数值系统**: 使用非装箱 (Unboxed) 的 `Value` 类型存储数值，消除接口转换带来的堆分配。
     - **整数快速路径**: 内部数值自动区分 `int64` 与 `float64`，整数运算零转换开销。
     - **对象池化**: 全程复用 `Lexer`, `Parser`, `Context` 及 `Buffer` 对象，在高频场景下接近零分配。
     - **多级编译优化**: 提供常量折叠 (Constant Folding) 和 激进代数简化。
@@ -90,6 +92,7 @@ func main() {
 
 更多关于引擎架构、优化手段（整数快径、分层优化）以及详细的返回逻辑说明，请参阅文档：
 - [设计文档](docs/design.md)
+- [虚拟机设计与优化](docs/vm.md)
 - [技术规格 (必读)](docs/technical_spec.md)
 - [Recompiler 深度解析](docs/recompiler.md)
 - [使用指南](docs/usage.md)

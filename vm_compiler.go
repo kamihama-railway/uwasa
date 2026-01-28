@@ -8,26 +8,43 @@ import (
 )
 
 type Bytecode struct {
-	Instructions Instructions
-	Constants    []any
+	Instructions  Instructions
+	Constants     []any
+	VariableNames []string
 }
 
 type Compiler struct {
-	instructions Instructions
-	constants    []any
+	instructions  Instructions
+	constants     []any
+	variableNames []string
+	constMap      map[any]int
 }
 
 func NewCompiler() *Compiler {
 	return &Compiler{
 		instructions: Instructions{},
 		constants:    []any{},
+		constMap:     make(map[any]int),
 	}
 }
 
+func (c *Compiler) addVariable(name string) int {
+	for i, v := range c.variableNames {
+		if v == name {
+			return i
+		}
+	}
+	c.variableNames = append(c.variableNames, name)
+	return len(c.variableNames) - 1
+}
+
 func (c *Compiler) Compile(node Node) error {
+	if node == nil {
+		return nil
+	}
 	switch n := node.(type) {
 	case *Identifier:
-		c.emit(OpGetGlobal, c.addConstant(n.Value))
+		c.emit(OpGetGlobal, c.addVariable(n.Value))
 
 	case *NumberLiteral:
 		if n.IsInt {
@@ -176,7 +193,7 @@ func (c *Compiler) Compile(node Node) error {
 		if err != nil {
 			return err
 		}
-		c.emit(OpSetGlobal, c.addConstant(n.Name.Value))
+		c.emit(OpSetGlobal, c.addVariable(n.Name.Value))
 
 	case *CallExpression:
 		for _, arg := range n.Arguments {
@@ -197,13 +214,13 @@ func (c *Compiler) Compile(node Node) error {
 }
 
 func (c *Compiler) addConstant(obj any) int {
-	for i, constant := range c.constants {
-		if constant == obj {
-			return i
-		}
+	if idx, ok := c.constMap[obj]; ok {
+		return idx
 	}
 	c.constants = append(c.constants, obj)
-	return len(c.constants) - 1
+	idx := len(c.constants) - 1
+	c.constMap[obj] = idx
+	return idx
 }
 
 func isLiteral(node Node) (any, bool) {
@@ -237,8 +254,9 @@ func (c *Compiler) changeOperand(opPos int, operand int) {
 
 func (c *Compiler) Bytecode() *Bytecode {
 	return &Bytecode{
-		Instructions: c.instructions,
-		Constants:    c.constants,
+		Instructions:  c.instructions,
+		Constants:     c.constants,
+		VariableNames: c.variableNames,
 	}
 }
 
@@ -274,6 +292,7 @@ func (b *Bytecode) Render() *RenderedBytecode {
 		rawToRendered[idx] = len(renderedIns)
 		inst := rawIns[idx]
 
+		// Fusion: GetGlobal + EqualConst + JumpIfFalse + Pop
 		if inst.op == OpGetGlobal && idx+3 < len(rawIns) {
 			next := rawIns[idx+1]
 			nextNext := rawIns[idx+2]
@@ -293,11 +312,15 @@ func (b *Bytecode) Render() *RenderedBytecode {
 			}
 		}
 
+		// Fusion: GetGlobal + BinaryOp
 		if inst.op == OpGetGlobal && idx+1 < len(rawIns) {
 			next := rawIns[idx+1]
 			var fused OpCode
 			switch next.op {
 			case OpAdd: fused = OpAddGlobal
+			case OpSub: fused = OpSubGlobal
+			case OpMul: fused = OpMulGlobal
+			case OpDiv: fused = OpDivGlobal
 			}
 			if fused != 0 {
 				renderedIns = append(renderedIns, vmInstruction{
@@ -308,6 +331,38 @@ func (b *Bytecode) Render() *RenderedBytecode {
 				idx += 1
 				continue
 			}
+		}
+
+		// Fusion: Constant + BinaryOp
+		if inst.op == OpConstant && idx+1 < len(rawIns) {
+			next := rawIns[idx+1]
+			var fused OpCode
+			switch next.op {
+			case OpAdd: fused = OpAddConst
+			case OpSub: fused = OpSubConst
+			case OpMul: fused = OpMulConst
+			case OpDiv: fused = OpDivConst
+			}
+			if fused != 0 {
+				renderedIns = append(renderedIns, vmInstruction{
+					op:   fused,
+					arg1: uint16(inst.args[0]),
+				})
+				rawToRendered[idx+1] = len(renderedIns) - 1
+				idx += 1
+				continue
+			}
+		}
+
+		// Fusion: JumpIfFalse + Pop -> JumpIfFalsePop
+		if inst.op == OpJumpIfFalse && idx+1 < len(rawIns) && rawIns[idx+1].op == OpPop {
+			renderedIns = append(renderedIns, vmInstruction{
+				op:   OpJumpIfFalsePop,
+				arg1: uint16(inst.args[0]),
+			})
+			rawToRendered[idx+1] = len(renderedIns) - 1
+			idx += 1
+			continue
 		}
 
 		renderedIns = append(renderedIns, vmInstruction{
@@ -327,7 +382,7 @@ func (b *Bytecode) Render() *RenderedBytecode {
 
 	for idx := range renderedIns {
 		inst := renderedIns[idx]
-		if inst.op == OpJump || inst.op == OpJumpIfFalse || inst.op == OpJumpIfTrue || inst.op == OpFusedCompareGlobalConstJumpIfFalse {
+		if inst.op == OpJump || inst.op == OpJumpIfFalse || inst.op == OpJumpIfTrue || inst.op == OpJumpIfFalsePop || inst.op == OpFusedCompareGlobalConstJumpIfFalse {
 			target := 0
 			if inst.op == OpFusedCompareGlobalConstJumpIfFalse {
 				target = int(inst.arg3)
@@ -349,7 +404,8 @@ func (b *Bytecode) Render() *RenderedBytecode {
 	}
 
 	return &RenderedBytecode{
-		Instructions: renderedIns,
-		Constants:    renderedConstants,
+		Instructions:  renderedIns,
+		Constants:     renderedConstants,
+		VariableNames: b.VariableNames,
 	}
 }

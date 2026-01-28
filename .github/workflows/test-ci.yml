@@ -19,7 +19,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.25'
+          go-version: '1.24'
           check-latest: true
 
       - name: Install dependencies
@@ -37,7 +37,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.25.x'
+          go-version: '1.24.x'
 
       - name: Run benchmarks
         # -benchmem 对于像 Uwasa 这种追求极致性能的引擎来说非常关键
