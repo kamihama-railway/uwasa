@@ -17,7 +17,7 @@ func TestASTString(t *testing.T) {
 		},
 		{
 			"NumberLiteral",
-			&NumberLiteral{Value: 123.45},
+			&NumberLiteral{Float64Value: 123.45, IsInt: false},
 			"123.45",
 		},
 		{
@@ -29,7 +29,7 @@ func TestASTString(t *testing.T) {
 			"PrefixExpression",
 			&PrefixExpression{
 				Operator: "-",
-				Right:    &NumberLiteral{Value: 5},
+				Right:    &NumberLiteral{Int64Value: 5, IsInt: true},
 			},
 			"(-5)",
 		},
@@ -46,7 +46,7 @@ func TestASTString(t *testing.T) {
 			"AssignExpression",
 			&AssignExpression{
 				Name:  &Identifier{Value: "x"},
-				Value: &NumberLiteral{Value: 10},
+				Value: &NumberLiteral{Int64Value: 10, IsInt: true},
 			},
 			"(x = 10)",
 		},
@@ -56,7 +56,7 @@ func TestASTString(t *testing.T) {
 				Condition: &InfixExpression{
 					Left:     &Identifier{Value: "a"},
 					Operator: "==",
-					Right:    &NumberLiteral{Value: 0},
+					Right:    &NumberLiteral{Int64Value: 0, IsInt: true},
 				},
 				IsSimple: true,
 			},
@@ -68,14 +68,14 @@ func TestASTString(t *testing.T) {
 				Condition: &InfixExpression{
 					Left:     &Identifier{Value: "a"},
 					Operator: "==",
-					Right:    &NumberLiteral{Value: 0},
+					Right:    &NumberLiteral{Int64Value: 0, IsInt: true},
 				},
 				Consequence: &StringLiteral{Value: "yes"},
 				Alternative: &IfExpression{
 					Condition: &InfixExpression{
 						Left:     &Identifier{Value: "a"},
 						Operator: "==",
-						Right:    &NumberLiteral{Value: 1},
+						Right:    &NumberLiteral{Int64Value: 1, IsInt: true},
 					},
 					Consequence: &StringLiteral{Value: "ok"},
 					Alternative: &StringLiteral{Value: "bad"},
@@ -90,11 +90,11 @@ func TestASTString(t *testing.T) {
 				Condition: &InfixExpression{
 					Left:     &Identifier{Value: "a"},
 					Operator: ">",
-					Right:    &NumberLiteral{Value: 10},
+					Right:    &NumberLiteral{Int64Value: 10, IsInt: true},
 				},
 				Consequence: &AssignExpression{
 					Name:  &Identifier{Value: "b"},
-					Value: &NumberLiteral{Value: 1},
+					Value: &NumberLiteral{Int64Value: 1, IsInt: true},
 				},
 				IsThen: true,
 			},

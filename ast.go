@@ -22,11 +22,18 @@ func (i *Identifier) expressionNode() {}
 func (i *Identifier) String() string   { return i.Value }
 
 type NumberLiteral struct {
-	Value float64
+	Int64Value   int64
+	Float64Value float64
+	IsInt        bool
 }
 
 func (n *NumberLiteral) expressionNode() {}
-func (n *NumberLiteral) String() string   { return fmt.Sprintf("%g", n.Value) }
+func (n *NumberLiteral) String() string {
+	if n.IsInt {
+		return fmt.Sprintf("%d", n.Int64Value)
+	}
+	return fmt.Sprintf("%g", n.Float64Value)
+}
 
 type StringLiteral struct {
 	Value string

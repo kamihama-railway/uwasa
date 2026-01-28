@@ -18,6 +18,7 @@ const (
 	EQUALS
 	LESSGREATER
 	SUM
+	PRODUCT
 	PREFIX
 )
 
@@ -35,6 +36,8 @@ func getPrecedence(t TokenType) int {
 		return LESSGREATER
 	case TokenPlus, TokenMinus:
 		return SUM
+	case TokenAsterisk, TokenSlash, TokenPercent:
+		return PRODUCT
 	default:
 		return LOWEST
 	}
@@ -79,6 +82,9 @@ var parserPool = sync.Pool{
 		p.registerInfix(TokenLe, p.parseInfixExpression)
 		p.registerInfix(TokenPlus, p.parseInfixExpression)
 		p.registerInfix(TokenMinus, p.parseInfixExpression)
+		p.registerInfix(TokenAsterisk, p.parseInfixExpression)
+		p.registerInfix(TokenSlash, p.parseInfixExpression)
+		p.registerInfix(TokenPercent, p.parseInfixExpression)
 		p.registerInfix(TokenAssign, p.parseAssignExpression)
 
 		return p
@@ -145,13 +151,17 @@ func (p *Parser) parseIdentifier() Expression {
 }
 
 func (p *Parser) parseNumberLiteral() Expression {
+	if i, err := strconv.ParseInt(p.curTok.Literal, 10, 64); err == nil {
+		return &NumberLiteral{Int64Value: i, IsInt: true}
+	}
+
 	val, err := strconv.ParseFloat(p.curTok.Literal, 64)
 	if err != nil {
-		msg := fmt.Sprintf("could not parse %q as float64", p.curTok.Literal)
+		msg := fmt.Sprintf("could not parse %q as number", p.curTok.Literal)
 		p.errors = append(p.errors, msg)
 		return nil
 	}
-	return &NumberLiteral{Value: val}
+	return &NumberLiteral{Float64Value: val, IsInt: false}
 }
 
 func (p *Parser) parseStringLiteral() Expression {
