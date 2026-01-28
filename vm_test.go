@@ -83,3 +83,34 @@ func TestVM_ShortCircuit(t *testing.T) {
 		t.Errorf("Short-circuit || side effect failed: expected 0, got %v", vars2["a"])
 	}
 }
+
+func TestVMStackOverflow(t *testing.T) {
+	// 1. Test basic stack overflow (many nested additions with identifier)
+	depth := 70
+	expr := "a"
+	for i := 0; i < depth; i++ {
+		expr = "a + (" + expr + ")"
+	}
+	engine, err := NewEngineVMWithOptions(expr, EngineOptions{OptimizationLevel: OptNone})
+	if err != nil {
+		t.Fatalf("NewEngineVM failed: %v", err)
+	}
+	_, err = engine.Execute(map[string]any{"a": 1})
+	if err == nil || err.Error() != "VM stack overflow" {
+		t.Errorf("Expected stack overflow error, got: %v", err)
+	}
+
+	// 2. Test stack overflow with OpAddGlobal (optimized path)
+	expr2 := "(a+1)"
+	for i := 0; i < depth; i++ {
+		expr2 = "(a+1) + (" + expr2 + ")"
+	}
+	engine2, err := NewEngineVMWithOptions(expr2, EngineOptions{OptimizationLevel: OptBasic})
+	if err != nil {
+		t.Fatalf("NewEngineVM failed: %v", err)
+	}
+	_, err = engine2.Execute(map[string]any{"a": 1})
+	if err == nil || err.Error() != "VM stack overflow" {
+		t.Errorf("Expected stack overflow error, got: %v", err)
+	}
+}
