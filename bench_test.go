@@ -1,6 +1,7 @@
 package uwasa
 
 import (
+	"github.com/kamihama-railway/uwasa/neoex"
 	"testing"
 )
 
@@ -245,5 +246,32 @@ func BenchmarkComplexExpression_Recompiled(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		engine.Execute(vars)
+	}
+}
+
+func BenchmarkEngineExecute_NeoEx(b *testing.B) {
+	input := "1 + 2 * 3"
+	engine, _ := NewEngineVMNeoEx(input)
+	vars := map[string]any{}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = engine.Execute(vars)
+	}
+}
+
+func BenchmarkNeoExCompiler(b *testing.B) {
+	input := "1 + 2 * 3 + a - b * c / d % e == f && g || !h"
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		c := neoex.NewCompiler(input)
+		_, _ = c.Compile()
+	}
+}
+
+func BenchmarkStandardCompiler(b *testing.B) {
+	input := "1 + 2 * 3 + a - b * c / d % e == f && g || !h"
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = NewEngineVM(input)
 	}
 }

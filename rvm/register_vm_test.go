@@ -1,10 +1,12 @@
 // Copyright (c) 2026 WJQserver, Kamihama Railway Group. All rights reserved.
 // Licensed under the GNU Affero General Public License, version 3.0 (the "AGPL").
 
-package uwasa
+package rvm
 
 import (
 	"testing"
+	"github.com/kamihama-railway/uwasa/lexer"
+	"github.com/kamihama-railway/uwasa/parser"
 )
 
 func TestRegisterVM(t *testing.T) {
@@ -39,12 +41,28 @@ func TestRegisterVM(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		engine, err := NewEngineVMWithOptions(tt.input, EngineOptions{UseRegisterVM: true})
-		if err != nil {
-			t.Errorf("input %s: NewEngine error: %v", tt.input, err)
+		l := lexer.NewLexer(tt.input)
+		p := parser.NewParser(l)
+		prog := p.ParseProgram()
+		if len(p.Errors()) != 0 {
+			t.Errorf("input %s: parser error: %v", tt.input, p.Errors())
 			continue
 		}
-		got, err := engine.Execute(tt.vars)
+
+		c := NewRegisterCompiler()
+		bc, err := c.Compile(prog)
+		if err != nil {
+			t.Errorf("input %s: compile error: %v", tt.input, err)
+			continue
+		}
+
+		// Simple MapContext implementation for testing
+		ctx := &testMapContext{vars: tt.vars}
+		if ctx.vars == nil {
+			ctx.vars = make(map[string]any)
+		}
+
+		got, err := RunRegisterVM(bc, ctx)
 		if err != nil {
 			t.Errorf("input %s: Execute error: %v", tt.input, err)
 			continue
@@ -55,12 +73,32 @@ func TestRegisterVM(t *testing.T) {
 	}
 }
 
+type testMapContext struct {
+	vars map[string]any
+}
+
+func (m *testMapContext) Get(name string) (any, bool) {
+	v, ok := m.vars[name]
+	return v, ok
+}
+
+func (m *testMapContext) Set(name string, value any) error {
+	m.vars[name] = value
+	return nil
+}
+
 func TestRegisterVM_ShortCircuit(t *testing.T) {
 	// Test if side effects are skipped
 	input := "false && (a = 2)"
-	engine, _ := NewEngineVMWithOptions(input, EngineOptions{UseRegisterVM: true})
+	l := lexer.NewLexer(input)
+	p := parser.NewParser(l)
+	prog := p.ParseProgram()
+	c := NewRegisterCompiler()
+	bc, _ := c.Compile(prog)
+
 	vars := map[string]any{"a": int64(0)}
-	got, _ := engine.Execute(vars)
+	ctx := &testMapContext{vars: vars}
+	got, _ := RunRegisterVM(bc, ctx)
 	if got != false {
 		t.Errorf("Short-circuit && result failed: expected false, got %v", got)
 	}
@@ -69,9 +107,14 @@ func TestRegisterVM_ShortCircuit(t *testing.T) {
 	}
 
 	input2 := "true || (a = 2)"
-	engine2, _ := NewEngineVMWithOptions(input2, EngineOptions{UseRegisterVM: true})
+	l2 := lexer.NewLexer(input2)
+	p2 := parser.NewParser(l2)
+	prog2 := p2.ParseProgram()
+	c2 := NewRegisterCompiler()
+	bc2, _ := c2.Compile(prog2)
 	vars2 := map[string]any{"a": int64(0)}
-	got2, _ := engine2.Execute(vars2)
+	ctx2 := &testMapContext{vars: vars2}
+	got2, _ := RunRegisterVM(bc2, ctx2)
 	if got2 != true {
 		t.Errorf("Short-circuit || result failed: expected true, got %v", got2)
 	}

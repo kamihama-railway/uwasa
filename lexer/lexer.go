@@ -1,7 +1,7 @@
 // Copyright (c) 2026 WJQserver, Kamihama Railway Group. All rights reserved.
 // Licensed under the GNU Affero General Public License, version 3.0 (the "AGPL").
 
-package uwasa
+package lexer
 
 import (
 	"sync"
@@ -52,14 +52,14 @@ type Lexer struct {
 	ch           byte
 }
 
-var lexerPool = sync.Pool{
+var LexerPool = sync.Pool{
 	New: func() any {
 		return &Lexer{}
 	},
 }
 
 func NewLexer(input string) *Lexer {
-	l := lexerPool.Get().(*Lexer)
+	l := LexerPool.Get().(*Lexer)
 	l.Reset(input)
 	return l
 }

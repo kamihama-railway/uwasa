@@ -1,16 +1,18 @@
 // Copyright (c) 2026 WJQserver, Kamihama Railway Group. All rights reserved.
 // Licensed under the GNU Affero General Public License, version 3.0 (the "AGPL").
 
-package uwasa
+package rvm
 
 import (
 	"fmt"
 	"math"
+	"github.com/kamihama-railway/uwasa/types"
+	"github.com/kamihama-railway/uwasa/ast"
 )
 
 type RegisterCompiler struct {
 	instructions []regInstruction
-	constants    []Value
+	constants    []types.Value
 	constMap     map[any]int32
 	maxReg       uint8
 	errors       []string
@@ -22,7 +24,7 @@ func NewRegisterCompiler() *RegisterCompiler {
 	}
 }
 
-func (c *RegisterCompiler) Compile(node Node) (*RegisterBytecode, error) {
+func (c *RegisterCompiler) Compile(node ast.Node) (*RegisterBytecode, error) {
 	finalReg, err := c.walk(node, 0)
 	if err != nil {
 		return nil, err
@@ -69,7 +71,7 @@ func (c *RegisterCompiler) Compile(node Node) (*RegisterBytecode, error) {
 	return bc, nil
 }
 
-func (c *RegisterCompiler) walk(node Node, reg int) (int, error) {
+func (c *RegisterCompiler) walk(node ast.Node, reg int) (int, error) {
 	if reg > 250 {
 		return 0, fmt.Errorf("register limit exceeded")
 	}
@@ -80,33 +82,33 @@ func (c *RegisterCompiler) walk(node Node, reg int) (int, error) {
 	uReg := uint8(reg)
 
 	switch n := node.(type) {
-	case *Identifier:
-		c.emit(ROpGetGlobal, uReg, 0, 0, c.addConstant(Value{Type: ValString, Str: n.Value}))
+	case *ast.Identifier:
+		c.emit(ROpGetGlobal, uReg, 0, 0, c.addConstant(types.Value{Type: types.ValString, Str: n.Value}))
 		return reg, nil
 
-	case *NumberLiteral:
+	case *ast.NumberLiteral:
 		if n.IsInt {
-			c.emit(ROpLoadConst, uReg, 0, 0, c.addConstant(Value{Type: ValInt, Num: uint64(n.Int64Value)}))
+			c.emit(ROpLoadConst, uReg, 0, 0, c.addConstant(types.Value{Type: types.ValInt, Num: uint64(n.Int64Value)}))
 		} else {
-			c.emit(ROpLoadConst, uReg, 0, 0, c.addConstant(Value{Type: ValFloat, Num: math.Float64bits(n.Float64Value)}))
+			c.emit(ROpLoadConst, uReg, 0, 0, c.addConstant(types.Value{Type: types.ValFloat, Num: math.Float64bits(n.Float64Value)}))
 		}
 		return reg, nil
 
-	case *StringLiteral:
-		c.emit(ROpLoadConst, uReg, 0, 0, c.addConstant(Value{Type: ValString, Str: n.Value}))
+	case *ast.StringLiteral:
+		c.emit(ROpLoadConst, uReg, 0, 0, c.addConstant(types.Value{Type: types.ValString, Str: n.Value}))
 		return reg, nil
 
-	case *BooleanLiteral:
+	case *ast.BooleanLiteral:
 		val := uint64(0)
 		if n.Value {
 			val = 1
 		}
-		c.emit(ROpLoadConst, uReg, 0, 0, c.addConstant(Value{Type: ValBool, Num: val}))
+		c.emit(ROpLoadConst, uReg, 0, 0, c.addConstant(types.Value{Type: types.ValBool, Num: val}))
 		return reg, nil
 
-	case *PrefixExpression:
+	case *ast.PrefixExpression:
 		if n.Operator == "-" {
-			c.emit(ROpLoadConst, uReg, 0, 0, c.addConstant(Value{Type: ValInt, Num: 0}))
+			c.emit(ROpLoadConst, uReg, 0, 0, c.addConstant(types.Value{Type: types.ValInt, Num: 0}))
 			_, err := c.walk(n.Right, reg+1)
 			if err != nil {
 				return 0, err
@@ -122,7 +124,7 @@ func (c *RegisterCompiler) walk(node Node, reg int) (int, error) {
 			return reg, nil
 		}
 
-	case *InfixExpression:
+	case *ast.InfixExpression:
 		if n.Operator == "&&" {
 			_, err := c.walk(n.Left, reg)
 			if err != nil {
@@ -138,7 +140,7 @@ func (c *RegisterCompiler) walk(node Node, reg int) (int, error) {
 			c.emit(ROpNot, uReg, uReg, 0, 0)
 			jumpEnd := c.emit(ROpJump, 0, 0, 0, 0)
 			c.patch(jumpFalse, int32(len(c.instructions)))
-			c.emit(ROpLoadConst, uReg, 0, 0, c.addConstant(Value{Type: ValBool, Num: 0}))
+			c.emit(ROpLoadConst, uReg, 0, 0, c.addConstant(types.Value{Type: types.ValBool, Num: 0}))
 			c.patch(jumpEnd, int32(len(c.instructions)))
 			return reg, nil
 		}
@@ -157,7 +159,7 @@ func (c *RegisterCompiler) walk(node Node, reg int) (int, error) {
 			c.emit(ROpNot, uReg, uReg, 0, 0)
 			jumpEnd := c.emit(ROpJump, 0, 0, 0, 0)
 			c.patch(jumpTrue, int32(len(c.instructions)))
-			c.emit(ROpLoadConst, uReg, 0, 0, c.addConstant(Value{Type: ValBool, Num: 1}))
+			c.emit(ROpLoadConst, uReg, 0, 0, c.addConstant(types.Value{Type: types.ValBool, Num: 1}))
 			c.patch(jumpEnd, int32(len(c.instructions)))
 			return reg, nil
 		}
@@ -189,7 +191,7 @@ func (c *RegisterCompiler) walk(node Node, reg int) (int, error) {
 		c.emit(op, uReg, uint8(lReg), uint8(rReg), 0)
 		return reg, nil
 
-	case *IfExpression:
+	case *ast.IfExpression:
 		cReg, err := c.walk(n.Condition, reg)
 		if err != nil {
 			return 0, err
@@ -214,21 +216,21 @@ func (c *RegisterCompiler) walk(node Node, reg int) (int, error) {
 				return 0, err
 			}
 		} else {
-			c.emit(ROpLoadConst, uReg, 0, 0, c.addConstant(Value{Type: ValNil}))
+			c.emit(ROpLoadConst, uReg, 0, 0, c.addConstant(types.Value{Type: types.ValNil}))
 		}
 		c.patch(jumpEnd, int32(len(c.instructions)))
 		return reg, nil
 
-	case *AssignExpression:
+	case *ast.AssignExpression:
 		vReg, err := c.walk(n.Value, reg)
 		if err != nil {
 			return 0, err
 		}
-		c.emit(ROpSetGlobal, 0, uint8(vReg), 0, c.addConstant(Value{Type: ValString, Str: n.Name.Value}))
+		c.emit(ROpSetGlobal, 0, uint8(vReg), 0, c.addConstant(types.Value{Type: types.ValString, Str: n.Name.Value}))
 		return vReg, nil
 
-	case *CallExpression:
-		if ident, ok := n.Function.(*Identifier); ok && ident.Value == "concat" {
+	case *ast.CallExpression:
+		if ident, ok := n.Function.(*ast.Identifier); ok && ident.Value == "concat" {
 			for i, arg := range n.Arguments {
 				_, err := c.walk(arg, reg+i)
 				if err != nil {
@@ -245,8 +247,8 @@ func (c *RegisterCompiler) walk(node Node, reg int) (int, error) {
 				return 0, err
 			}
 		}
-		if ident, ok := n.Function.(*Identifier); ok {
-			c.emit(ROpCall, uReg, uint8(reg+1), uint8(len(n.Arguments)), c.addConstant(Value{Type: ValString, Str: ident.Value}))
+		if ident, ok := n.Function.(*ast.Identifier); ok {
+			c.emit(ROpCall, uReg, uint8(reg+1), uint8(len(n.Arguments)), c.addConstant(types.Value{Type: types.ValString, Str: ident.Value}))
 		} else {
 			return 0, fmt.Errorf("calling non-identifier functions not supported in Register VM yet")
 		}
@@ -255,18 +257,18 @@ func (c *RegisterCompiler) walk(node Node, reg int) (int, error) {
 	return reg, nil
 }
 
-func (c *RegisterCompiler) addConstant(v Value) int32 {
+func (c *RegisterCompiler) addConstant(v types.Value) int32 {
 	var key any
 	switch v.Type {
-	case ValInt:
+	case types.ValInt:
 		key = int64(v.Num)
-	case ValFloat:
+	case types.ValFloat:
 		key = math.Float64frombits(v.Num)
-	case ValBool:
+	case types.ValBool:
 		key = v.Num != 0
-	case ValString:
+	case types.ValString:
 		key = v.Str
-	case ValNil:
+	case types.ValNil:
 		key = nil
 	}
 	if idx, ok := c.constMap[key]; ok {

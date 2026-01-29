@@ -4,41 +4,21 @@
 package uwasa
 
 import (
+	"github.com/kamihama-railway/uwasa/types"
 	"sync"
 )
 
-// Context 定义了变量操作的接口
-type Context interface {
-	Get(name string) (val any, exists bool)
-	Set(name string, value any) error
-}
-
-// MapContext 是 Context 接口的一个简单实现
-type MapContext struct {
-	vars map[string]any
-}
+type Context = types.Context
+type MapContext = types.MapContext
 
 var contextPool = sync.Pool{
 	New: func() any {
-		return &MapContext{}
+		return types.NewMapContext(nil)
 	},
 }
 
 func NewMapContext(vars map[string]any) *MapContext {
-	if vars == nil {
-		vars = make(map[string]any)
-	}
 	ctx := contextPool.Get().(*MapContext)
-	ctx.vars = vars
+	ctx.Reset(vars)
 	return ctx
-}
-
-func (c *MapContext) Get(name string) (any, bool) {
-	val, exists := c.vars[name]
-	return val, exists
-}
-
-func (c *MapContext) Set(name string, value any) error {
-	c.vars[name] = value
-	return nil
 }

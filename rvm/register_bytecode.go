@@ -1,9 +1,9 @@
-// Copyright (c) 2026 WJQserver, Kamihama Railway Group. All rights reserved.
-// Licensed under the GNU Affero General Public License, version 3.0 (the "AGPL").
+package rvm
 
-package uwasa
-
-import "fmt"
+import (
+	"fmt"
+	"github.com/kamihama-railway/uwasa/types"
+)
 
 type ROpCode byte
 
@@ -72,6 +72,6 @@ type regInstruction struct {
 
 type RegisterBytecode struct {
 	Instructions []regInstruction
-	Constants    []Value
+	Constants    []types.Value
 	MaxRegisters uint8
 }

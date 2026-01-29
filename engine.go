@@ -2,8 +2,10 @@
 // Licensed under the GNU Affero General Public License, version 3.0 (the "AGPL").
 
 package uwasa
+import "github.com/kamihama-railway/uwasa/rvm"
 
 import (
+	"github.com/kamihama-railway/uwasa/neoex"
 	"fmt"
 )
 
@@ -23,7 +25,8 @@ type EngineOptions struct {
 type Engine struct {
 	program          Expression
 	bytecode         *RenderedBytecode
-	registerBytecode *RegisterBytecode
+	registerBytecode *rvm.RegisterBytecode
+	neoexBytecode     *neoex.Bytecode
 	constantResult   any
 	isConstant       bool
 }
@@ -89,7 +92,7 @@ func NewEngineVMWithOptions(input string, opts EngineOptions) (*Engine, error) {
 	}
 
 	if opts.UseRegisterVM {
-		c := NewRegisterCompiler()
+		c := rvm.NewRegisterCompiler()
 		// For now, register VM compiler doesn't have the full optimized pipeline like VMCompiler
 		// But we can manually fold
 		var optimized Node = program
@@ -101,7 +104,7 @@ func NewEngineVMWithOptions(input string, opts EngineOptions) (*Engine, error) {
 			return nil, err
 		}
 		// If the resulting bytecode is just returning a single constant, optimize it
-		if bc != nil && len(bc.Instructions) == 2 && bc.Instructions[0].Op == ROpLoadConst && bc.Instructions[1].Op == ROpReturn {
+		if bc != nil && len(bc.Instructions) == 2 && bc.Instructions[0].Op == rvm.ROpLoadConst && bc.Instructions[1].Op == rvm.ROpReturn {
 			return &Engine{constantResult: bc.Constants[bc.Instructions[0].Arg].ToInterface(), isConstant: true}, nil
 		}
 		return &Engine{registerBytecode: bc}, nil
@@ -129,11 +132,14 @@ func (e *Engine) Execute(vars map[string]any) (any, error) {
 
 	ctx := NewMapContext(vars)
 	defer func() {
-		ctx.vars = nil
+		ctx.Vars = nil
 		contextPool.Put(ctx)
 	}()
 	if e.registerBytecode != nil {
-		return RunRegisterVM(e.registerBytecode, ctx)
+		return rvm.RunRegisterVM(e.registerBytecode, ctx)
+	}
+	if e.neoexBytecode != nil {
+		return neoex.Run(e.neoexBytecode, ctx)
 	}
 	if e.bytecode != nil {
 		return RunVM(e.bytecode, ctx)
@@ -147,10 +153,22 @@ func (e *Engine) ExecuteWithContext(ctx Context) (any, error) {
 	}
 
 	if e.registerBytecode != nil {
-		return RunRegisterVM(e.registerBytecode, ctx)
+		return rvm.RunRegisterVM(e.registerBytecode, ctx)
+	}
+	if e.neoexBytecode != nil {
+		return neoex.Run(e.neoexBytecode, ctx)
 	}
 	if e.bytecode != nil {
 		return RunVM(e.bytecode, ctx)
 	}
 	return Eval(e.program, ctx)
+}
+
+func NewEngineVMNeoEx(input string) (*Engine, error) {
+	c := neoex.NewCompiler(input)
+	bc, err := c.Compile()
+	if err != nil {
+		return nil, err
+	}
+	return &Engine{neoexBytecode: bc}, nil
 }
