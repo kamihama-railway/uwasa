@@ -45,6 +45,12 @@ func RunNeoVM[C Context](bc *NeoBytecode, ctx C) (any, error) {
 				stack[sp] = Value{Type: ValInt, Num: l.Num + r.Num}
 			} else if l.Type == ValString && r.Type == ValString {
 				stack[sp] = Value{Type: ValString, Str: l.Str + r.Str}
+			} else if l.Type == ValFloat && r.Type == ValFloat {
+				stack[sp] = Value{Type: ValFloat, Num: math.Float64bits(math.Float64frombits(l.Num) + math.Float64frombits(r.Num))}
+			} else if l.Type == ValInt && r.Type == ValFloat {
+				stack[sp] = Value{Type: ValFloat, Num: math.Float64bits(float64(int64(l.Num)) + math.Float64frombits(r.Num))}
+			} else if l.Type == ValFloat && r.Type == ValInt {
+				stack[sp] = Value{Type: ValFloat, Num: math.Float64bits(math.Float64frombits(l.Num) + float64(int64(r.Num)))}
 			} else {
 				lf, _ := valToFloat64(l)
 				rf, _ := valToFloat64(r)
@@ -226,6 +232,41 @@ func RunNeoVM[C Context](bc *NeoBytecode, ctx C) (any, error) {
 			if sp >= 64 { return nil, fmt.Errorf("NeoVM stack overflow") }
 			if lv.Type == ValInt && rv.Type == ValInt {
 				stack[sp] = Value{Type: ValInt, Num: lv.Num + rv.Num}
+			} else if lv.Type == ValString && rv.Type == ValString {
+				stack[sp] = Value{Type: ValString, Str: lv.Str + rv.Str}
+			} else if lv.Type == ValFloat && rv.Type == ValFloat {
+				stack[sp] = Value{Type: ValFloat, Num: math.Float64bits(math.Float64frombits(lv.Num) + math.Float64frombits(rv.Num))}
+			} else if lv.Type == ValInt && rv.Type == ValFloat {
+				stack[sp] = Value{Type: ValFloat, Num: math.Float64bits(float64(int64(lv.Num)) + math.Float64frombits(rv.Num))}
+			} else if lv.Type == ValFloat && rv.Type == ValInt {
+				stack[sp] = Value{Type: ValFloat, Num: math.Float64bits(math.Float64frombits(lv.Num) + float64(int64(rv.Num)))}
+			} else {
+				lf, _ := valToFloat64(lv); rf, _ := valToFloat64(rv)
+				stack[sp] = Value{Type: ValFloat, Num: math.Float64bits(lf + rf)}
+			}
+		case NeoOpAddConstGlobal:
+			cIdx := inst.Arg >> 16; gIdx := inst.Arg & 0xFFFF
+			name := consts[gIdx].Str
+			var rv Value
+			if isMapCtx {
+				rv = FromInterface(vars[name])
+			} else {
+				val, _ := ctx.Get(name)
+				rv = FromInterface(val)
+			}
+			lv := consts[cIdx]
+			sp++
+			if sp >= 64 { return nil, fmt.Errorf("NeoVM stack overflow") }
+			if lv.Type == ValInt && rv.Type == ValInt {
+				stack[sp] = Value{Type: ValInt, Num: lv.Num + rv.Num}
+			} else if lv.Type == ValString && rv.Type == ValString {
+				stack[sp] = Value{Type: ValString, Str: lv.Str + rv.Str}
+			} else if lv.Type == ValFloat && rv.Type == ValFloat {
+				stack[sp] = Value{Type: ValFloat, Num: math.Float64bits(math.Float64frombits(lv.Num) + math.Float64frombits(rv.Num))}
+			} else if lv.Type == ValInt && rv.Type == ValFloat {
+				stack[sp] = Value{Type: ValFloat, Num: math.Float64bits(float64(int64(lv.Num)) + math.Float64frombits(rv.Num))}
+			} else if lv.Type == ValFloat && rv.Type == ValInt {
+				stack[sp] = Value{Type: ValFloat, Num: math.Float64bits(math.Float64frombits(lv.Num) + float64(int64(rv.Num)))}
 			} else {
 				lf, _ := valToFloat64(lv); rf, _ := valToFloat64(rv)
 				stack[sp] = Value{Type: ValFloat, Num: math.Float64bits(lf + rf)}
@@ -245,6 +286,14 @@ func RunNeoVM[C Context](bc *NeoBytecode, ctx C) (any, error) {
 			if sp >= 64 { return nil, fmt.Errorf("NeoVM stack overflow") }
 			if lv.Type == ValInt && rv.Type == ValInt {
 				stack[sp] = Value{Type: ValInt, Num: lv.Num + rv.Num}
+			} else if lv.Type == ValString && rv.Type == ValString {
+				stack[sp] = Value{Type: ValString, Str: lv.Str + rv.Str}
+			} else if lv.Type == ValFloat && rv.Type == ValFloat {
+				stack[sp] = Value{Type: ValFloat, Num: math.Float64bits(math.Float64frombits(lv.Num) + math.Float64frombits(rv.Num))}
+			} else if lv.Type == ValInt && rv.Type == ValFloat {
+				stack[sp] = Value{Type: ValFloat, Num: math.Float64bits(float64(int64(lv.Num)) + math.Float64frombits(rv.Num))}
+			} else if lv.Type == ValFloat && rv.Type == ValInt {
+				stack[sp] = Value{Type: ValFloat, Num: math.Float64bits(math.Float64frombits(lv.Num) + float64(int64(rv.Num)))}
 			} else {
 				lf, _ := valToFloat64(lv); rf, _ := valToFloat64(rv)
 				stack[sp] = Value{Type: ValFloat, Num: math.Float64bits(lf + rf)}

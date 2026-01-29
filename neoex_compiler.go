@@ -213,12 +213,18 @@ func (c *NeoExCompiler) parseInfixExpression(left compilationValue) (compilation
 	precedence := c.curPrecedence()
 
 	if op == "&&" {
-		if left.isConst {
-			if !isValTruthy(left.val) {
-				return left, nil
-			}
+		// Only fold if left is false, but we can't easily skip right side tokens without emitting
+		// unless we add a "skip" mode. For now, let's just use the standard emission which handles short-circuiting at runtime.
+		// Wait, if left is constant true, we can just return right.
+		if left.isConst && isValTruthy(left.val) {
 			c.nextToken()
 			return c.parseExpression(precedence)
+		}
+
+		if !left.isConst {
+			// already emitted
+		} else {
+			c.emitPush(left.val)
 		}
 
 		jumpFalse := c.emit(NeoOpJumpIfFalse, 0)
@@ -240,12 +246,15 @@ func (c *NeoExCompiler) parseInfixExpression(left compilationValue) (compilation
 	}
 
 	if op == "||" {
-		if left.isConst {
-			if isValTruthy(left.val) {
-				return left, nil
-			}
+		if left.isConst && !isValTruthy(left.val) {
 			c.nextToken()
 			return c.parseExpression(precedence)
+		}
+
+		if !left.isConst {
+			// already emitted
+		} else {
+			c.emitPush(left.val)
 		}
 
 		jumpTrue := c.emit(NeoOpJumpIfTrue, 0)
@@ -300,7 +309,12 @@ func (c *NeoExCompiler) parseInfixExpression(left compilationValue) (compilation
 	if right.isConst { c.emitPush(right.val) }
 
 	switch op {
-	case "+": c.emit(NeoOpAdd, 0)
+	case "+":
+		// Try to optimize string concatenation sequence
+		// If we are at the top level of a '+' sequence, we could collect them.
+		// But in a recursive descent, it's easier to do it bottom-up or just let peephole handle it?
+		// Peephole is better.
+		c.emit(NeoOpAdd, 0)
 	case "-": c.emit(NeoOpSub, 0)
 	case "*": c.emit(NeoOpMul, 0)
 	case "/": c.emit(NeoOpDiv, 0)
@@ -613,6 +627,23 @@ func (c *NeoExCompiler) peephole() {
 			}
 		}
 
+		// 2-instruction fusion: Push + GetGlobal + Add -> AddConstGlobal
+		if i+2 < len(c.instructions) &&
+			inst.Op == NeoOpPush &&
+			c.instructions[i+1].Op == NeoOpGetGlobal &&
+			c.instructions[i+2].Op == NeoOpAdd {
+
+			cIdx := inst.Arg
+			gIdx := c.instructions[i+1].Arg
+			if cIdx < 65536 && gIdx < 65536 {
+				newInsts = append(newInsts, neoInstruction{Op: NeoOpAddConstGlobal, Arg: (cIdx << 16) | gIdx})
+				oldToNew[i+1] = len(newInsts) - 1
+				oldToNew[i+2] = len(newInsts) - 1
+				i += 2
+				continue
+			}
+		}
+
 		if i+2 < len(c.instructions) &&
 			inst.Op == NeoOpGetGlobal &&
 			c.instructions[i+1].Op == NeoOpPush {
@@ -702,6 +733,29 @@ func (c *NeoExCompiler) peephole() {
 			jTarget := newInsts[i].Arg & 0xFFFF
 			newInsts[i].Arg = (gIdx << 16) | int32(oldToNew[jTarget])
 		}
+	}
+
+	// Second pass for Add -> Concat fusion
+	if len(newInsts) >= 3 {
+		finalInsts := make([]neoInstruction, 0, len(newInsts))
+		for i := 0; i < len(newInsts); i++ {
+			// Pattern: [val1, val2, Add, val3, Add] -> [val1, val2, val3, Concat(3)]
+			// Actually, let's look for sequences of [Add, val, Add, val, ...]
+			// This is hard because of the postfix nature.
+
+			// Simple case: fuse two consecutive additions
+			// [..., val1, val2, Add, val3, Add]
+			if i >= 4 && newInsts[i].Op == NeoOpAdd && newInsts[i-2].Op == NeoOpAdd {
+				// We have something like [..., Add, val3, Add]
+				// This means (stack_top_result) + val3
+				// If we have [val1, val2, Add, val3, Add], we want [val1, val2, val3, Concat(3)]
+
+				// To do this properly, we need to know how many things are being added.
+				// This is basically tree-to-list conversion.
+			}
+			finalInsts = append(finalInsts, newInsts[i])
+		}
+		newInsts = finalInsts
 	}
 
 	c.instructions = newInsts

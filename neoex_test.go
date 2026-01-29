@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestNeoEx(t *testing.T) {
+func TestNeoExVM(t *testing.T) {
 	tests := []struct {
 		input    string
 		vars     map[string]any
@@ -40,5 +40,48 @@ func TestNeoEx(t *testing.T) {
 		if got != tt.expected {
 			t.Errorf("Execute(%q) = %v, want %v", tt.input, got, tt.expected)
 		}
+	}
+}
+
+func TestNeoExVM_ShortCircuit(t *testing.T) {
+	input := "false && (a = 2)"
+	engine, err := NewEngineVMNeo(input)
+	if err != nil {
+		t.Fatalf("NewEngineVMNeo failed: %v", err)
+	}
+	vars := map[string]any{"a": int64(0)}
+	got, _ := engine.Execute(vars)
+	if got != false {
+		t.Errorf("Short-circuit && result failed: expected false, got %v", got)
+	}
+	if vars["a"] != int64(0) {
+		t.Errorf("Short-circuit && side effect failed: expected 0, got %v", vars["a"])
+	}
+
+	input2 := "true || (a = 2)"
+	engine2, _ := NewEngineVMNeo(input2)
+	vars2 := map[string]any{"a": int64(0)}
+	got2, _ := engine2.Execute(vars2)
+	if got2 != true {
+		t.Errorf("Short-circuit || result failed: expected true, got %v", got2)
+	}
+	if vars2["a"] != int64(0) {
+		t.Errorf("Short-circuit || side effect failed: expected 0, got %v", vars2["a"])
+	}
+}
+
+func TestNeoExVMStackOverflow(t *testing.T) {
+	depth := 70
+	expr := "a"
+	for i := 0; i < depth; i++ {
+		expr = "a + (" + expr + ")"
+	}
+	engine, err := NewEngineVMNeo(expr)
+	if err != nil {
+		t.Fatalf("NewEngineVMNeo failed: %v", err)
+	}
+	_, err = engine.Execute(map[string]any{"a": 1})
+	if err == nil || err.Error() != "NeoVM stack overflow" {
+		t.Errorf("Expected stack overflow error, got: %v", err)
 	}
 }

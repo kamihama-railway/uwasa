@@ -31,6 +31,7 @@ const (
 	NeoOpCall
 	NeoOpEqualConst
 	NeoOpAddGlobal
+	NeoOpAddConstGlobal
 	NeoOpFusedCompareGlobalConstJumpIfFalse
 	NeoOpEqualGlobalConst
 	NeoOpGreaterGlobalConst
@@ -67,6 +68,7 @@ func (o NeoOpCode) String() string {
 	case NeoOpCall: return "CALL"
 	case NeoOpEqualConst: return "EQC"
 	case NeoOpAddGlobal: return "ADDG"
+	case NeoOpAddConstGlobal: return "ADDCG"
 	case NeoOpFusedCompareGlobalConstJumpIfFalse: return "FCG CJIF"
 	case NeoOpEqualGlobalConst: return "EQGC"
 	case NeoOpGreaterGlobalConst: return "GTGC"
