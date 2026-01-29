@@ -4,8 +4,9 @@
 package uwasa
 
 import (
-	"github.com/kamihama-railway/uwasa/types"
 	"fmt"
+	"math"
+	"github.com/kamihama-railway/uwasa/types"
 )
 
 type OpCode byte
@@ -82,8 +83,6 @@ func (o OpCode) String() string {
 	}
 }
 
-
-
 type ValueType = types.ValueType
 
 const (
@@ -96,7 +95,25 @@ const (
 
 type Value = types.Value
 
-var FromInterface = types.FromInterface
+func FromInterface(v any) Value {
+	switch val := v.(type) {
+	case int64:
+		return Value{Type: ValInt, Num: uint64(val)}
+	case int:
+		return Value{Type: ValInt, Num: uint64(val)}
+	case float64:
+		return Value{Type: ValFloat, Num: math.Float64bits(val)}
+	case bool:
+		if val {
+			return Value{Type: ValBool, Num: 1}
+		}
+		return Value{Type: ValBool, Num: 0}
+	case string:
+		return Value{Type: ValString, Str: val}
+	default:
+		return Value{Type: ValNil}
+	}
+}
 
 type vmInstruction struct {
 	Op  OpCode

@@ -34,6 +34,9 @@ const (
 	OpEqualGlobalConst
 	OpAddGlobalConst
 	OpGetGlobalJumpIfFalse
+	OpFusedCompareGlobalConstJumpIfFalse
+	OpAddGlobalGlobal
+	OpSubGlobalGlobal
 )
 
 type Instruction struct {

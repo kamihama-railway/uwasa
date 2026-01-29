@@ -1,0 +1,105 @@
+goos: linux
+goarch: amd64
+pkg: github.com/kamihama-railway/uwasa
+cpu: Intel(R) Xeon(R) Processor @ 2.30GHz
+BenchmarkOptimizationComparison/IntAddSub_Const/None-4         	 3725161	       321.5 ns/op	      24 B/op	       3 allocs/op
+BenchmarkOptimizationComparison/IntAddSub_Const/Basic-4        	285096207	         4.680 ns/op	       0 B/op	       0 allocs/op
+BenchmarkOptimizationComparison/IntAddSub_Const/Recompiled-4   	201774819	         6.332 ns/op	       0 B/op	       0 allocs/op
+BenchmarkOptimizationComparison/IntAddSub_Const/VM-4           	190140028	         6.641 ns/op	       0 B/op	       0 allocs/op
+BenchmarkOptimizationComparison/IntAddSub_Const/RegisterVM-4   	222347626	         4.654 ns/op	       0 B/op	       0 allocs/op
+BenchmarkOptimizationComparison/IntAddSub_Const/NeoEx-4        	 5017603	       203.6 ns/op	       0 B/op	       0 allocs/op
+BenchmarkOptimizationComparison/IntMixed_Const/None-4          	 6068528	       198.1 ns/op	       0 B/op	       0 allocs/op
+BenchmarkOptimizationComparison/IntMixed_Const/Basic-4         	284380663	         4.201 ns/op	       0 B/op	       0 allocs/op
+BenchmarkOptimizationComparison/IntMixed_Const/Recompiled-4    	284140266	         4.204 ns/op	       0 B/op	       0 allocs/op
+BenchmarkOptimizationComparison/IntMixed_Const/VM-4            	284896762	         4.845 ns/op	       0 B/op	       0 allocs/op
+BenchmarkOptimizationComparison/IntMixed_Const/RegisterVM-4    	264229306	         4.195 ns/op	       0 B/op	       0 allocs/op
+BenchmarkOptimizationComparison/IntMixed_Const/NeoEx-4         	 7196032	       167.5 ns/op	       0 B/op	       0 allocs/op
+BenchmarkOptimizationComparison/FloatAddSub_Const/None-4       	 3248599	       365.8 ns/op	      88 B/op	      11 allocs/op
+BenchmarkOptimizationComparison/FloatAddSub_Const/Basic-4      	287333727	         4.179 ns/op	       0 B/op	       0 allocs/op
+BenchmarkOptimizationComparison/FloatAddSub_Const/Recompiled-4 	287292364	         4.178 ns/op	       0 B/op	       0 allocs/op
+BenchmarkOptimizationComparison/FloatAddSub_Const/VM-4         	286678519	         4.179 ns/op	       0 B/op	       0 allocs/op
+BenchmarkOptimizationComparison/FloatAddSub_Const/RegisterVM-4 	286356996	         4.177 ns/op	       0 B/op	       0 allocs/op
+BenchmarkOptimizationComparison/FloatAddSub_Const/NeoEx-4      	 6054523	       195.0 ns/op	       8 B/op	       1 allocs/op
+BenchmarkOptimizationComparison/IntAddSub_Vars/None-4          	 3755119	       313.2 ns/op	       8 B/op	       1 allocs/op
+BenchmarkOptimizationComparison/IntAddSub_Vars/Basic-4         	 3815528	       312.8 ns/op	       8 B/op	       1 allocs/op
+BenchmarkOptimizationComparison/IntAddSub_Vars/Recompiled-4    	 3808948	       312.3 ns/op	       8 B/op	       1 allocs/op
+BenchmarkOptimizationComparison/IntAddSub_Vars/VM-4            	 5173696	       231.0 ns/op	       0 B/op	       0 allocs/op
+BenchmarkOptimizationComparison/IntAddSub_Vars/RegisterVM-4    	 4762743	       252.3 ns/op	       0 B/op	       0 allocs/op
+BenchmarkOptimizationComparison/IntAddSub_Vars/NeoEx-4         	 4631811	       258.9 ns/op	       0 B/op	       0 allocs/op
+BenchmarkOptimizationComparison/IntMixed_Vars/None-4           	 5057668	       238.4 ns/op	       0 B/op	       0 allocs/op
+BenchmarkOptimizationComparison/IntMixed_Vars/Basic-4          	 5069046	       236.5 ns/op	       0 B/op	       0 allocs/op
+BenchmarkOptimizationComparison/IntMixed_Vars/Recompiled-4     	 5064393	       236.2 ns/op	       0 B/op	       0 allocs/op
+BenchmarkOptimizationComparison/IntMixed_Vars/VM-4             	 5576766	       216.1 ns/op	       0 B/op	       0 allocs/op
+BenchmarkOptimizationComparison/IntMixed_Vars/RegisterVM-4     	 5132043	       233.4 ns/op	       0 B/op	       0 allocs/op
+BenchmarkOptimizationComparison/IntMixed_Vars/NeoEx-4          	 5005297	       240.0 ns/op	       0 B/op	       0 allocs/op
+BenchmarkOptimizationComparison/BoolShortCircuit_Const/None-4  	27715137	        36.42 ns/op	       0 B/op	       0 allocs/op
+BenchmarkOptimizationComparison/BoolShortCircuit_Const/Basic-4 	286832044	         4.183 ns/op	       0 B/op	       0 allocs/op
+BenchmarkOptimizationComparison/BoolShortCircuit_Const/Recompiled-4         	287013633	         4.185 ns/op	       0 B/op	       0 allocs/op
+BenchmarkOptimizationComparison/BoolShortCircuit_Const/VM-4                 	286537070	         4.189 ns/op	       0 B/op	       0 allocs/op
+BenchmarkOptimizationComparison/BoolShortCircuit_Const/RegisterVM-4         	286804654	         4.185 ns/op	       0 B/op	       0 allocs/op
+BenchmarkOptimizationComparison/BoolShortCircuit_Const/NeoEx-4              	11385948	       105.3 ns/op	       0 B/op	       0 allocs/op
+BenchmarkOptimizationComparison/AlgebraicSimplification/None-4              	 5293017	       225.9 ns/op	       0 B/op	       0 allocs/op
+BenchmarkOptimizationComparison/AlgebraicSimplification/Basic-4             	 5295537	       226.3 ns/op	       0 B/op	       0 allocs/op
+BenchmarkOptimizationComparison/AlgebraicSimplification/Recompiled-4        	 6762835	       176.8 ns/op	       0 B/op	       0 allocs/op
+BenchmarkOptimizationComparison/AlgebraicSimplification/VM-4                	 5638664	       211.4 ns/op	       0 B/op	       0 allocs/op
+BenchmarkOptimizationComparison/AlgebraicSimplification/RegisterVM-4        	 4972657	       240.7 ns/op	       0 B/op	       0 allocs/op
+BenchmarkOptimizationComparison/AlgebraicSimplification/NeoEx-4             	 5096623	       234.0 ns/op	       0 B/op	       0 allocs/op
+BenchmarkOptimizationComparison/DeeplyNested_Unoptimized/None-4             	 7228111	       165.9 ns/op	       0 B/op	       0 allocs/op
+BenchmarkOptimizationComparison/DeeplyNested_Unoptimized/Basic-4            	 7240286	       164.6 ns/op	       0 B/op	       0 allocs/op
+BenchmarkOptimizationComparison/DeeplyNested_Unoptimized/Recompiled-4       	 7219959	       165.0 ns/op	       0 B/op	       0 allocs/op
+BenchmarkOptimizationComparison/DeeplyNested_Unoptimized/VM-4               	10223439	       117.0 ns/op	       0 B/op	       0 allocs/op
+BenchmarkOptimizationComparison/DeeplyNested_Unoptimized/RegisterVM-4       	 7312290	       164.1 ns/op	       0 B/op	       0 allocs/op
+BenchmarkOptimizationComparison/DeeplyNested_Unoptimized/NeoEx-4            	 7791870	       154.3 ns/op	       0 B/op	       0 allocs/op
+BenchmarkOptimizationComparison/StringConcat_Long/None-4                    	 1000000	      1056 ns/op	     232 B/op	      15 allocs/op
+BenchmarkOptimizationComparison/StringConcat_Long/Basic-4                   	 1000000	      1054 ns/op	     232 B/op	      15 allocs/op
+BenchmarkOptimizationComparison/StringConcat_Long/Recompiled-4              	 1139625	      1057 ns/op	     232 B/op	      15 allocs/op
+BenchmarkOptimizationComparison/StringConcat_Long/VM-4                      	 5465614	       220.0 ns/op	       0 B/op	       0 allocs/op
+BenchmarkOptimizationComparison/StringConcat_Long/RegisterVM-4              	 2044594	       580.1 ns/op	     104 B/op	       7 allocs/op
+BenchmarkOptimizationComparison/StringConcat_Long/NeoEx-4                   	 5396800	       222.1 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMixedTypeArithmetic/IntFloat-4                                     	 9088650	       138.5 ns/op	       8 B/op	       1 allocs/op
+BenchmarkMixedTypeArithmetic/IntFloat_VM-4                                  	 8277472	       142.6 ns/op	       8 B/op	       1 allocs/op
+BenchmarkMixedTypeArithmetic/IntFloat_RegisterVM-4                          	 6245088	       183.5 ns/op	       8 B/op	       1 allocs/op
+BenchmarkMixedTypeArithmetic/IntFloat_NeoEx-4                               	 6251103	       184.5 ns/op	       8 B/op	       1 allocs/op
+BenchmarkConcatBuiltin/Variables-4                                          	 1619462	       764.4 ns/op	     312 B/op	       7 allocs/op
+BenchmarkConcatBuiltin/Variables_VM-4                                       	 2848726	       422.3 ns/op	      40 B/op	       2 allocs/op
+BenchmarkConcatBuiltin/Variables_RegisterVM-4                               	 2963970	       406.3 ns/op	      40 B/op	       2 allocs/op
+BenchmarkConcatBuiltin/Variables_NeoEx-4                                    	 2834493	       439.1 ns/op	      40 B/op	       2 allocs/op
+BenchmarkStringConcatenation/ConstStrings-4                                 	 5224036	       236.0 ns/op	      48 B/op	       3 allocs/op
+BenchmarkStringConcatenation/ConstStrings_VM-4                              	 4969590	       208.8 ns/op	      32 B/op	       2 allocs/op
+BenchmarkStringConcatenation/ConstStrings_RegisterVM-4                      	 3979922	       297.1 ns/op	      48 B/op	       3 allocs/op
+BenchmarkStringConcatenation/ConstStrings_NeoEx-4                           	 4007008	       339.9 ns/op	      48 B/op	       3 allocs/op
+BenchmarkLexer-4                                                            	 1961475	       624.9 ns/op	      71 B/op	       1 allocs/op
+BenchmarkParser-4                                                           	  218533	      5132 ns/op	    1951 B/op	      46 allocs/op
+BenchmarkEngineExecute-4                                                    	 5702976	       208.1 ns/op	      16 B/op	       1 allocs/op
+BenchmarkEngineExecute_RegisterVM-4                                         	 5653868	       219.1 ns/op	      16 B/op	       1 allocs/op
+BenchmarkEngineExecute_VM-4                                                 	 7173866	       162.2 ns/op	      16 B/op	       1 allocs/op
+BenchmarkEngineExecute_OptNone-4                                            	 5697459	       209.0 ns/op	      16 B/op	       1 allocs/op
+BenchmarkEngineExecute_OptBasic-4                                           	 5735329	       207.0 ns/op	      16 B/op	       1 allocs/op
+BenchmarkEngineExecute_Recompiled-4                                         	 5629660	       210.8 ns/op	      16 B/op	       1 allocs/op
+BenchmarkEngineExecuteWithContext-4                                         	 6660853	       177.4 ns/op	      16 B/op	       1 allocs/op
+BenchmarkEngineExecuteWithContext_NeoEx-4                                   	 6565591	       181.0 ns/op	      16 B/op	       1 allocs/op
+BenchmarkEngineExecuteWithContext_RegisterVM-4                              	 6370599	       186.9 ns/op	      16 B/op	       1 allocs/op
+BenchmarkEngineExecuteWithContext_VM-4                                      	 8209584	       141.2 ns/op	      16 B/op	       1 allocs/op
+BenchmarkEngineExecuteWithContext_OptNone-4                                 	 6781854	       174.9 ns/op	      16 B/op	       1 allocs/op
+BenchmarkEngineExecuteWithContext_OptBasic-4                                	 6656062	       177.7 ns/op	      16 B/op	       1 allocs/op
+BenchmarkEngineExecuteWithContext_Recompiled-4                              	 6741940	       175.5 ns/op	      16 B/op	       1 allocs/op
+BenchmarkComplexExpression-4                                                	 2775380	       435.4 ns/op	      24 B/op	       2 allocs/op
+BenchmarkComplexExpression_NeoEx-4                                          	 3921249	       320.7 ns/op	       0 B/op	       0 allocs/op
+BenchmarkComplexExpression_RegisterVM-4                                     	 4052710	       310.0 ns/op	       0 B/op	       0 allocs/op
+BenchmarkComplexExpression_VM-4                                             	 4128871	       394.3 ns/op	       0 B/op	       0 allocs/op
+BenchmarkComplexExpression_OptNone-4                                        	 1713874	       703.2 ns/op	      24 B/op	       2 allocs/op
+BenchmarkComplexExpression_OptBasic-4                                       	 2468893	       458.9 ns/op	      24 B/op	       2 allocs/op
+BenchmarkComplexExpression_Recompiled-4                                     	 2652642	       440.1 ns/op	      24 B/op	       2 allocs/op
+BenchmarkEngineExecute_NeoEx-4                                              	10346504	       114.3 ns/op	       0 B/op	       0 allocs/op
+BenchmarkNeoExCompiler-4                                                    	  234004	      4672 ns/op	    2544 B/op	      27 allocs/op
+BenchmarkStandardCompiler-4                                                 	  105776	     10971 ns/op	    5240 B/op	      87 allocs/op
+PASS
+ok  	github.com/kamihama-railway/uwasa	137.951s
+?   	github.com/kamihama-railway/uwasa/ast	[no test files]
+?   	github.com/kamihama-railway/uwasa/lexer	[no test files]
+PASS
+ok  	github.com/kamihama-railway/uwasa/neoex	0.005s
+?   	github.com/kamihama-railway/uwasa/parser	[no test files]
+PASS
+ok  	github.com/kamihama-railway/uwasa/rvm	0.007s
+?   	github.com/kamihama-railway/uwasa/types	[no test files]

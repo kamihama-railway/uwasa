@@ -4,7 +4,6 @@
 package uwasa
 
 import (
-	"github.com/kamihama-railway/uwasa/types"
 	"bytes"
 	"fmt"
 	"math"
@@ -49,8 +48,7 @@ func runVMMapped(bc *RenderedBytecode, ctx *MapContext) (any, error) {
 			} else if l.Type == ValString && r.Type == ValString {
 				stack[sp] = Value{Type: ValString, Str: l.Str + r.Str}
 			} else {
-				lf, _ := ValToFloat64(l)
-				rf, _ := ValToFloat64(r)
+				lf, _ := valToFloat64(l); rf, _ := valToFloat64(r)
 				stack[sp] = Value{Type: ValFloat, Num: math.Float64bits(lf + rf)}
 			}
 		case OpSub:
@@ -58,8 +56,7 @@ func runVMMapped(bc *RenderedBytecode, ctx *MapContext) (any, error) {
 			if l.Type == ValInt && r.Type == ValInt {
 				stack[sp] = Value{Type: ValInt, Num: l.Num - r.Num}
 			} else {
-				lf, _ := ValToFloat64(l)
-				rf, _ := ValToFloat64(r)
+				lf, _ := valToFloat64(l); rf, _ := valToFloat64(r)
 				stack[sp] = Value{Type: ValFloat, Num: math.Float64bits(lf - rf)}
 			}
 		case OpMul:
@@ -67,232 +64,200 @@ func runVMMapped(bc *RenderedBytecode, ctx *MapContext) (any, error) {
 			if l.Type == ValInt && r.Type == ValInt {
 				stack[sp] = Value{Type: ValInt, Num: l.Num * r.Num}
 			} else {
-				lf, _ := ValToFloat64(l)
-				rf, _ := ValToFloat64(r)
+				lf, _ := valToFloat64(l); rf, _ := valToFloat64(r)
 				stack[sp] = Value{Type: ValFloat, Num: math.Float64bits(lf * rf)}
 			}
 		case OpDiv:
 			r := stack[sp]; sp--; l := stack[sp]
-			if r.Type == ValInt && r.Num == 0 { return nil, fmt.Errorf("division by zero") }
-			if r.Type == ValFloat && math.Float64frombits(r.Num) == 0 { return nil, fmt.Errorf("division by zero") }
+			if r.Num == 0 { return nil, fmt.Errorf("division by zero") }
 			if l.Type == ValInt && r.Type == ValInt {
 				stack[sp] = Value{Type: ValInt, Num: l.Num / r.Num}
 			} else {
-				lf, _ := ValToFloat64(l)
-				rf, _ := ValToFloat64(r)
+				lf, _ := valToFloat64(l); rf, _ := valToFloat64(r)
 				stack[sp] = Value{Type: ValFloat, Num: math.Float64bits(lf / rf)}
 			}
 		case OpMod:
 			r := stack[sp]; sp--; l := stack[sp]
-			if r.Type != ValInt { return nil, fmt.Errorf("modulo operator supports only integers") }
-			if r.Num == 0 { return nil, fmt.Errorf("division by zero") }
+			if r.Type != ValInt || r.Num == 0 { return nil, fmt.Errorf("division by zero") }
 			stack[sp] = Value{Type: ValInt, Num: l.Num % r.Num}
 		case OpEqual:
 			r := stack[sp]; sp--; l := stack[sp]
 			res := false
 			if l.Type == r.Type {
-				switch l.Type {
-				case ValInt, ValFloat, ValBool: res = l.Num == r.Num
-				case ValString: res = l.Str == r.Str
-				case ValNil: res = true
-				}
+				if l.Type == ValString { res = l.Str == r.Str } else { res = l.Num == r.Num }
 			} else {
-				lf, okL := ValToFloat64(l); rf, okR := ValToFloat64(r)
+				lf, okL := valToFloat64(l); rf, okR := valToFloat64(r)
 				if okL && okR { res = lf == rf }
 			}
-			stack[sp] = Value{Type: ValBool, Num: BoolToUint64(res)}
+			stack[sp] = Value{Type: ValBool, Num: boolToUint64(res)}
 		case OpGreater:
 			r := stack[sp]; sp--; l := stack[sp]
 			res := false
 			if l.Type == ValInt && r.Type == ValInt {
 				res = int64(l.Num) > int64(r.Num)
 			} else {
-				lf, _ := ValToFloat64(l); rf, _ := ValToFloat64(r)
+				lf, _ := valToFloat64(l); rf, _ := valToFloat64(r)
 				res = lf > rf
 			}
-			stack[sp] = Value{Type: ValBool, Num: BoolToUint64(res)}
+			stack[sp] = Value{Type: ValBool, Num: boolToUint64(res)}
 		case OpLess:
 			r := stack[sp]; sp--; l := stack[sp]
 			res := false
 			if l.Type == ValInt && r.Type == ValInt {
 				res = int64(l.Num) < int64(r.Num)
 			} else {
-				lf, _ := ValToFloat64(l); rf, _ := ValToFloat64(r)
+				lf, _ := valToFloat64(l); rf, _ := valToFloat64(r)
 				res = lf < rf
 			}
-			stack[sp] = Value{Type: ValBool, Num: BoolToUint64(res)}
+			stack[sp] = Value{Type: ValBool, Num: boolToUint64(res)}
 		case OpGreaterEqual:
 			r := stack[sp]; sp--; l := stack[sp]
 			res := false
 			if l.Type == ValInt && r.Type == ValInt {
 				res = int64(l.Num) >= int64(r.Num)
 			} else {
-				lf, _ := ValToFloat64(l); rf, _ := ValToFloat64(r)
+				lf, _ := valToFloat64(l); rf, _ := valToFloat64(r)
 				res = lf >= rf
 			}
-			stack[sp] = Value{Type: ValBool, Num: BoolToUint64(res)}
+			stack[sp] = Value{Type: ValBool, Num: boolToUint64(res)}
 		case OpLessEqual:
 			r := stack[sp]; sp--; l := stack[sp]
 			res := false
 			if l.Type == ValInt && r.Type == ValInt {
 				res = int64(l.Num) <= int64(r.Num)
 			} else {
-				lf, _ := ValToFloat64(l); rf, _ := ValToFloat64(r)
+				lf, _ := valToFloat64(l); rf, _ := valToFloat64(r)
 				res = lf <= rf
 			}
-			stack[sp] = Value{Type: ValBool, Num: BoolToUint64(res)}
+			stack[sp] = Value{Type: ValBool, Num: boolToUint64(res)}
 		case OpAnd:
 			r := stack[sp]; sp--; l := stack[sp]
-			stack[sp] = Value{Type: ValBool, Num: BoolToUint64(IsValTruthy(l) && IsValTruthy(r))}
+			stack[sp] = Value{Type: ValBool, Num: boolToUint64(isValTruthy(l) && isValTruthy(r))}
 		case OpOr:
 			r := stack[sp]; sp--; l := stack[sp]
-			stack[sp] = Value{Type: ValBool, Num: BoolToUint64(IsValTruthy(l) || IsValTruthy(r))}
+			stack[sp] = Value{Type: ValBool, Num: boolToUint64(isValTruthy(l) || isValTruthy(r))}
 		case OpNot:
-			l := stack[sp]
-			stack[sp] = Value{Type: ValBool, Num: BoolToUint64(!IsValTruthy(l))}
+			stack[sp] = Value{Type: ValBool, Num: boolToUint64(!isValTruthy(stack[sp]))}
 		case OpJump:
 			pc = int(inst.Arg)
 		case OpJumpIfFalse:
 			l := stack[sp]; sp--
-			if !IsValTruthy(l) { pc = int(inst.Arg) }
+			if !isValTruthy(l) { pc = int(inst.Arg) }
 		case OpJumpIfTrue:
 			l := stack[sp]; sp--
-			if IsValTruthy(l) { pc = int(inst.Arg) }
+			if isValTruthy(l) { pc = int(inst.Arg) }
 		case OpGetGlobal:
-			name := consts[inst.Arg].Str
+			val := vars[consts[inst.Arg].Str]
 			sp++
 			if sp >= 64 { return nil, fmt.Errorf("VM stack overflow") }
-			stack[sp] = FromInterface(vars[name])
+			stack[sp] = localFromInterface(val)
 		case OpSetGlobal:
 			name := consts[inst.Arg].Str
-			val := stack[sp]
-			vars[name] = val.ToInterface()
+			vars[name] = stack[sp].ToInterface()
 		case OpCall:
-			nameIdx := inst.Arg & 0xFFFF
-			numArgs := int(inst.Arg >> 16)
+			nameIdx := inst.Arg & 0xFFFF; numArgs := int(inst.Arg >> 16)
 			name := consts[nameIdx].Str
 			args := make([]any, numArgs)
-			for i := numArgs - 1; i >= 0; i-- {
-				args[i] = stack[sp].ToInterface(); sp--
-			}
+			for i := numArgs - 1; i >= 0; i-- { args[i] = stack[sp].ToInterface(); sp-- }
 			if builtin, ok := builtins[name]; ok {
 				res, err := builtin(args...)
 				if err != nil { return nil, err }
 				sp++
 				if sp >= 64 { return nil, fmt.Errorf("VM stack overflow") }
-				stack[sp] = FromInterface(res)
-			} else {
-				return nil, fmt.Errorf("builtin function not found: %s", name)
-			}
+				stack[sp] = localFromInterface(res)
+			} else { return nil, fmt.Errorf("builtin function not found: %s", name) }
 		case OpEqualConst:
 			r := consts[inst.Arg]; l := stack[sp]
 			res := false
 			if l.Type == r.Type {
-				switch l.Type {
-				case ValInt, ValFloat, ValBool: res = l.Num == r.Num
-				case ValString: res = l.Str == r.Str
-				case ValNil: res = true
-				}
+				if l.Type == ValString { res = l.Str == r.Str } else { res = l.Num == r.Num }
 			} else {
-				lf, okL := ValToFloat64(l); rf, okR := ValToFloat64(r)
+				lf, okL := valToFloat64(l); rf, okR := valToFloat64(r)
 				if okL && okR { res = lf == rf }
 			}
-			stack[sp] = Value{Type: ValBool, Num: BoolToUint64(res)}
+			stack[sp] = Value{Type: ValBool, Num: boolToUint64(res)}
 		case OpAddGlobal:
 			gIdx := inst.Arg & 0xFFFF; cIdx := inst.Arg >> 16
-			name := consts[gIdx].Str
-			lv := FromInterface(vars[name])
+			lv := localFromInterface(vars[consts[gIdx].Str])
 			rv := consts[cIdx]
 			sp++
 			if sp >= 64 { return nil, fmt.Errorf("VM stack overflow") }
 			if lv.Type == ValInt && rv.Type == ValInt {
 				stack[sp] = Value{Type: ValInt, Num: lv.Num + rv.Num}
 			} else {
-				lf, _ := ValToFloat64(lv); rf, _ := ValToFloat64(rv)
+				lf, _ := valToFloat64(lv); rf, _ := valToFloat64(rv)
 				stack[sp] = Value{Type: ValFloat, Num: math.Float64bits(lf + rf)}
 			}
 		case OpAddGlobalGlobal:
 			g1Idx := inst.Arg >> 16; g2Idx := inst.Arg & 0xFFFF
-			lv := FromInterface(vars[consts[g1Idx].Str])
-			rv := FromInterface(vars[consts[g2Idx].Str])
+			lv := localFromInterface(vars[consts[g1Idx].Str])
+			rv := localFromInterface(vars[consts[g2Idx].Str])
 			sp++
 			if sp >= 64 { return nil, fmt.Errorf("VM stack overflow") }
 			if lv.Type == ValInt && rv.Type == ValInt {
 				stack[sp] = Value{Type: ValInt, Num: lv.Num + rv.Num}
 			} else {
-				lf, _ := ValToFloat64(lv); rf, _ := ValToFloat64(rv)
+				lf, _ := valToFloat64(lv); rf, _ := valToFloat64(rv)
 				stack[sp] = Value{Type: ValFloat, Num: math.Float64bits(lf + rf)}
 			}
 		case OpEqualGlobalConst:
 			gIdx := inst.Arg >> 16; cIdx := inst.Arg & 0xFFFF
-			lv := FromInterface(vars[consts[gIdx].Str])
-			r := consts[cIdx]
-			res := false
+			lv := localFromInterface(vars[consts[gIdx].Str])
+			r := consts[cIdx]; res := false
 			if lv.Type == r.Type {
-				switch lv.Type {
-				case ValInt, ValFloat, ValBool: res = lv.Num == r.Num
-				case ValString: res = lv.Str == r.Str
-				case ValNil: res = true
-				}
+				if lv.Type == ValString { res = lv.Str == r.Str } else { res = lv.Num == r.Num }
 			} else {
-				lf, okL := ValToFloat64(lv); rf, okR := ValToFloat64(r)
+				lf, okL := valToFloat64(lv); rf, okR := valToFloat64(r)
 				if okL && okR { res = lf == rf }
 			}
 			sp++
 			if sp >= 64 { return nil, fmt.Errorf("VM stack overflow") }
-			stack[sp] = Value{Type: ValBool, Num: BoolToUint64(res)}
+			stack[sp] = Value{Type: ValBool, Num: boolToUint64(res)}
 		case OpGreaterGlobalConst:
 			gIdx := inst.Arg >> 16; cIdx := inst.Arg & 0xFFFF
-			lv := FromInterface(vars[consts[gIdx].Str])
-			r := consts[cIdx]
-			res := false
+			lv := localFromInterface(vars[consts[gIdx].Str])
+			r := consts[cIdx]; res := false
 			if lv.Type == ValInt && r.Type == ValInt {
 				res = int64(lv.Num) > int64(r.Num)
 			} else {
-				lf, _ := ValToFloat64(lv); rf, _ := ValToFloat64(r)
+				lf, _ := valToFloat64(lv); rf, _ := valToFloat64(r)
 				res = lf > rf
 			}
 			sp++
 			if sp >= 64 { return nil, fmt.Errorf("VM stack overflow") }
-			stack[sp] = Value{Type: ValBool, Num: BoolToUint64(res)}
+			stack[sp] = Value{Type: ValBool, Num: boolToUint64(res)}
 		case OpLessGlobalConst:
 			gIdx := inst.Arg >> 16; cIdx := inst.Arg & 0xFFFF
-			lv := FromInterface(vars[consts[gIdx].Str])
-			r := consts[cIdx]
-			res := false
+			lv := localFromInterface(vars[consts[gIdx].Str])
+			r := consts[cIdx]; res := false
 			if lv.Type == ValInt && r.Type == ValInt {
 				res = int64(lv.Num) < int64(r.Num)
 			} else {
-				lf, _ := ValToFloat64(lv); rf, _ := ValToFloat64(r)
+				lf, _ := valToFloat64(lv); rf, _ := valToFloat64(r)
 				res = lf < rf
 			}
 			sp++
 			if sp >= 64 { return nil, fmt.Errorf("VM stack overflow") }
-			stack[sp] = Value{Type: ValBool, Num: BoolToUint64(res)}
+			stack[sp] = Value{Type: ValBool, Num: boolToUint64(res)}
 		case OpFusedCompareGlobalConstJumpIfFalse:
 			gIdx := int(inst.Arg >> 22) & 0x3FF
 			cIdx := int(inst.Arg >> 12) & 0x3FF
 			jTarget := int(inst.Arg) & 0xFFF
-			lv := FromInterface(vars[consts[gIdx].Str])
-			r := consts[cIdx]
-			res := false
+			lv := localFromInterface(vars[consts[gIdx].Str])
+			r := consts[cIdx]; res := false
 			if lv.Type == r.Type {
-				switch lv.Type {
-				case ValInt, ValFloat, ValBool: res = lv.Num == r.Num
-				case ValString: res = lv.Str == r.Str
-				case ValNil: res = true
-				}
+				if lv.Type == ValString { res = lv.Str == r.Str } else { res = lv.Num == r.Num }
 			} else {
-				lf, okL := ValToFloat64(lv); rf, okR := ValToFloat64(r)
+				lf, okL := valToFloat64(lv); rf, okR := valToFloat64(r)
 				if okL && okR { res = lf == rf }
 			}
 			if !res { pc = jTarget }
 		case OpGetGlobalJumpIfFalse:
 			gIdx := inst.Arg >> 16; jTarget := inst.Arg & 0xFFFF
-			if !IsValTruthy(FromInterface(vars[consts[gIdx].Str])) { pc = int(jTarget) }
+			if !isValTruthy(localFromInterface(vars[consts[gIdx].Str])) { pc = int(jTarget) }
 		case OpGetGlobalJumpIfTrue:
 			gIdx := inst.Arg >> 16; jTarget := inst.Arg & 0xFFFF
-			if IsValTruthy(FromInterface(vars[consts[gIdx].Str])) { pc = int(jTarget) }
+			if isValTruthy(localFromInterface(vars[consts[gIdx].Str])) { pc = int(jTarget) }
 		case OpConcat:
 			numArgs := int(inst.Arg)
 			totalLen := 0
@@ -350,7 +315,7 @@ func runVMGeneral(bc *RenderedBytecode, ctx Context) (any, error) {
 			} else if l.Type == ValString && r.Type == ValString {
 				stack[sp] = Value{Type: ValString, Str: l.Str + r.Str}
 			} else {
-				lf, _ := ValToFloat64(l); rf, _ := ValToFloat64(r)
+				lf, _ := valToFloat64(l); rf, _ := valToFloat64(r)
 				stack[sp] = Value{Type: ValFloat, Num: math.Float64bits(lf + rf)}
 			}
 		case OpSub:
@@ -358,7 +323,7 @@ func runVMGeneral(bc *RenderedBytecode, ctx Context) (any, error) {
 			if l.Type == ValInt && r.Type == ValInt {
 				stack[sp] = Value{Type: ValInt, Num: l.Num - r.Num}
 			} else {
-				lf, _ := ValToFloat64(l); rf, _ := ValToFloat64(r)
+				lf, _ := valToFloat64(l); rf, _ := valToFloat64(r)
 				stack[sp] = Value{Type: ValFloat, Num: math.Float64bits(lf - rf)}
 			}
 		case OpMul:
@@ -366,234 +331,205 @@ func runVMGeneral(bc *RenderedBytecode, ctx Context) (any, error) {
 			if l.Type == ValInt && r.Type == ValInt {
 				stack[sp] = Value{Type: ValInt, Num: l.Num * r.Num}
 			} else {
-				lf, _ := ValToFloat64(l); rf, _ := ValToFloat64(r)
+				lf, _ := valToFloat64(l); rf, _ := valToFloat64(r)
 				stack[sp] = Value{Type: ValFloat, Num: math.Float64bits(lf * rf)}
 			}
 		case OpDiv:
 			r := stack[sp]; sp--; l := stack[sp]
-			if r.Type == ValInt && r.Num == 0 { return nil, fmt.Errorf("division by zero") }
-			if r.Type == ValFloat && math.Float64frombits(r.Num) == 0 { return nil, fmt.Errorf("division by zero") }
+			if r.Num == 0 { return nil, fmt.Errorf("division by zero") }
 			if l.Type == ValInt && r.Type == ValInt {
 				stack[sp] = Value{Type: ValInt, Num: l.Num / r.Num}
 			} else {
-				lf, _ := ValToFloat64(l); rf, _ := ValToFloat64(r)
+				lf, _ := valToFloat64(l); rf, _ := valToFloat64(r)
 				stack[sp] = Value{Type: ValFloat, Num: math.Float64bits(lf / rf)}
 			}
 		case OpMod:
 			r := stack[sp]; sp--; l := stack[sp]
-			if r.Type != ValInt { return nil, fmt.Errorf("modulo operator supports only integers") }
-			if r.Num == 0 { return nil, fmt.Errorf("division by zero") }
+			if r.Type != ValInt || r.Num == 0 { return nil, fmt.Errorf("division by zero") }
 			stack[sp] = Value{Type: ValInt, Num: l.Num % r.Num}
 		case OpEqual:
 			r := stack[sp]; sp--; l := stack[sp]
 			res := false
 			if l.Type == r.Type {
-				switch l.Type {
-				case ValInt, ValFloat, ValBool: res = l.Num == r.Num
-				case ValString: res = l.Str == r.Str
-				case ValNil: res = true
-				}
+				if l.Type == ValString { res = l.Str == r.Str } else { res = l.Num == r.Num }
 			} else {
-				lf, okL := ValToFloat64(l); rf, okR := ValToFloat64(r)
+				lf, okL := valToFloat64(l); rf, okR := valToFloat64(r)
 				if okL && okR { res = lf == rf }
 			}
-			stack[sp] = Value{Type: ValBool, Num: BoolToUint64(res)}
+			stack[sp] = Value{Type: ValBool, Num: boolToUint64(res)}
 		case OpGreater:
 			r := stack[sp]; sp--; l := stack[sp]
 			res := false
 			if l.Type == ValInt && r.Type == ValInt {
 				res = int64(l.Num) > int64(r.Num)
 			} else {
-				lf, _ := ValToFloat64(l); rf, _ := ValToFloat64(r)
+				lf, _ := valToFloat64(l); rf, _ := valToFloat64(r)
 				res = lf > rf
 			}
-			stack[sp] = Value{Type: ValBool, Num: BoolToUint64(res)}
+			stack[sp] = Value{Type: ValBool, Num: boolToUint64(res)}
 		case OpLess:
 			r := stack[sp]; sp--; l := stack[sp]
 			res := false
 			if l.Type == ValInt && r.Type == ValInt {
 				res = int64(l.Num) < int64(r.Num)
 			} else {
-				lf, _ := ValToFloat64(l); rf, _ := ValToFloat64(r)
+				lf, _ := valToFloat64(l); rf, _ := valToFloat64(r)
 				res = lf < rf
 			}
-			stack[sp] = Value{Type: ValBool, Num: BoolToUint64(res)}
+			stack[sp] = Value{Type: ValBool, Num: boolToUint64(res)}
 		case OpGreaterEqual:
 			r := stack[sp]; sp--; l := stack[sp]
 			res := false
 			if l.Type == ValInt && r.Type == ValInt {
 				res = int64(l.Num) >= int64(r.Num)
 			} else {
-				lf, _ := ValToFloat64(l); rf, _ := ValToFloat64(r)
+				lf, _ := valToFloat64(l); rf, _ := valToFloat64(r)
 				res = lf >= rf
 			}
-			stack[sp] = Value{Type: ValBool, Num: BoolToUint64(res)}
+			stack[sp] = Value{Type: ValBool, Num: boolToUint64(res)}
 		case OpLessEqual:
 			r := stack[sp]; sp--; l := stack[sp]
 			res := false
 			if l.Type == ValInt && r.Type == ValInt {
 				res = int64(l.Num) <= int64(r.Num)
 			} else {
-				lf, _ := ValToFloat64(l); rf, _ := ValToFloat64(r)
+				lf, _ := valToFloat64(l); rf, _ := valToFloat64(r)
 				res = lf <= rf
 			}
-			stack[sp] = Value{Type: ValBool, Num: BoolToUint64(res)}
+			stack[sp] = Value{Type: ValBool, Num: boolToUint64(res)}
 		case OpAnd:
 			r := stack[sp]; sp--; l := stack[sp]
-			stack[sp] = Value{Type: ValBool, Num: BoolToUint64(IsValTruthy(l) && IsValTruthy(r))}
+			stack[sp] = Value{Type: ValBool, Num: boolToUint64(isValTruthy(l) && isValTruthy(r))}
 		case OpOr:
 			r := stack[sp]; sp--; l := stack[sp]
-			stack[sp] = Value{Type: ValBool, Num: BoolToUint64(IsValTruthy(l) || IsValTruthy(r))}
+			stack[sp] = Value{Type: ValBool, Num: boolToUint64(isValTruthy(l) || isValTruthy(r))}
 		case OpNot:
-			l := stack[sp]
-			stack[sp] = Value{Type: ValBool, Num: BoolToUint64(!IsValTruthy(l))}
+			stack[sp] = Value{Type: ValBool, Num: boolToUint64(!isValTruthy(stack[sp]))}
 		case OpJump:
 			pc = int(inst.Arg)
 		case OpJumpIfFalse:
 			l := stack[sp]; sp--
-			if !IsValTruthy(l) { pc = int(inst.Arg) }
+			if !isValTruthy(l) { pc = int(inst.Arg) }
 		case OpJumpIfTrue:
 			l := stack[sp]; sp--
-			if IsValTruthy(l) { pc = int(inst.Arg) }
+			if isValTruthy(l) { pc = int(inst.Arg) }
 		case OpGetGlobal:
 			name := consts[inst.Arg].Str
 			val, _ := ctx.Get(name)
 			sp++
 			if sp >= 64 { return nil, fmt.Errorf("VM stack overflow") }
-			stack[sp] = FromInterface(val)
+			stack[sp] = localFromInterface(val)
 		case OpSetGlobal:
 			name := consts[inst.Arg].Str
-			val := stack[sp]
-			ctx.Set(name, val.ToInterface())
+			ctx.Set(name, stack[sp].ToInterface())
 		case OpCall:
-			nameIdx := inst.Arg & 0xFFFF
-			numArgs := int(inst.Arg >> 16)
+			nameIdx := inst.Arg & 0xFFFF; numArgs := int(inst.Arg >> 16)
 			name := consts[nameIdx].Str
 			args := make([]any, numArgs)
-			for i := numArgs - 1; i >= 0; i-- {
-				args[i] = stack[sp].ToInterface(); sp--
-			}
+			for i := numArgs - 1; i >= 0; i-- { args[i] = stack[sp].ToInterface(); sp-- }
 			if builtin, ok := builtins[name]; ok {
 				res, err := builtin(args...)
 				if err != nil { return nil, err }
 				sp++
 				if sp >= 64 { return nil, fmt.Errorf("VM stack overflow") }
-				stack[sp] = FromInterface(res)
-			} else {
-				return nil, fmt.Errorf("builtin function not found: %s", name)
-			}
+				stack[sp] = localFromInterface(res)
+			} else { return nil, fmt.Errorf("builtin function not found: %s", name) }
 		case OpEqualConst:
 			r := consts[inst.Arg]; l := stack[sp]
 			res := false
 			if l.Type == r.Type {
-				switch l.Type {
-				case ValInt, ValFloat, ValBool: res = l.Num == r.Num
-				case ValString: res = l.Str == r.Str
-				case ValNil: res = true
-				}
+				if l.Type == ValString { res = l.Str == r.Str } else { res = l.Num == r.Num }
 			} else {
-				lf, okL := ValToFloat64(l); rf, okR := ValToFloat64(r)
+				lf, okL := valToFloat64(l); rf, okR := valToFloat64(r)
 				if okL && okR { res = lf == rf }
 			}
-			stack[sp] = Value{Type: ValBool, Num: BoolToUint64(res)}
+			stack[sp] = Value{Type: ValBool, Num: boolToUint64(res)}
 		case OpAddGlobal:
 			gIdx := inst.Arg & 0xFFFF; cIdx := inst.Arg >> 16
 			val, _ := ctx.Get(consts[gIdx].Str)
-			lv := FromInterface(val)
+			lv := localFromInterface(val)
 			rv := consts[cIdx]
 			sp++
 			if sp >= 64 { return nil, fmt.Errorf("VM stack overflow") }
 			if lv.Type == ValInt && rv.Type == ValInt {
 				stack[sp] = Value{Type: ValInt, Num: lv.Num + rv.Num}
 			} else {
-				lf, _ := ValToFloat64(lv); rf, _ := ValToFloat64(rv)
+				lf, _ := valToFloat64(lv); rf, _ := valToFloat64(rv)
 				stack[sp] = Value{Type: ValFloat, Num: math.Float64bits(lf + rf)}
 			}
 		case OpAddGlobalGlobal:
 			g1Idx := inst.Arg >> 16; g2Idx := inst.Arg & 0xFFFF
 			v1, _ := ctx.Get(consts[g1Idx].Str)
 			v2, _ := ctx.Get(consts[g2Idx].Str)
-			lv := FromInterface(v1); rv := FromInterface(v2)
+			lv := localFromInterface(v1); rv := localFromInterface(v2)
 			sp++
 			if sp >= 64 { return nil, fmt.Errorf("VM stack overflow") }
 			if lv.Type == ValInt && rv.Type == ValInt {
 				stack[sp] = Value{Type: ValInt, Num: lv.Num + rv.Num}
 			} else {
-				lf, _ := ValToFloat64(lv); rf, _ := ValToFloat64(rv)
+				lf, _ := valToFloat64(lv); rf, _ := valToFloat64(rv)
 				stack[sp] = Value{Type: ValFloat, Num: math.Float64bits(lf + rf)}
 			}
 		case OpEqualGlobalConst:
 			gIdx := inst.Arg >> 16; cIdx := inst.Arg & 0xFFFF
 			val, _ := ctx.Get(consts[gIdx].Str)
-			lv := FromInterface(val); r := consts[cIdx]
-			res := false
+			lv := localFromInterface(val); r := consts[cIdx]; res := false
 			if lv.Type == r.Type {
-				switch lv.Type {
-				case ValInt, ValFloat, ValBool: res = lv.Num == r.Num
-				case ValString: res = lv.Str == r.Str
-				case ValNil: res = true
-				}
+				if lv.Type == ValString { res = lv.Str == r.Str } else { res = lv.Num == r.Num }
 			} else {
-				lf, okL := ValToFloat64(lv); rf, okR := ValToFloat64(r)
+				lf, okL := valToFloat64(lv); rf, okR := valToFloat64(r)
 				if okL && okR { res = lf == rf }
 			}
 			sp++
 			if sp >= 64 { return nil, fmt.Errorf("VM stack overflow") }
-			stack[sp] = Value{Type: ValBool, Num: BoolToUint64(res)}
+			stack[sp] = Value{Type: ValBool, Num: boolToUint64(res)}
 		case OpGreaterGlobalConst:
 			gIdx := inst.Arg >> 16; cIdx := inst.Arg & 0xFFFF
 			val, _ := ctx.Get(consts[gIdx].Str)
-			lv := FromInterface(val); r := consts[cIdx]
-			res := false
+			lv := localFromInterface(val); r := consts[cIdx]; res := false
 			if lv.Type == ValInt && r.Type == ValInt {
 				res = int64(lv.Num) > int64(r.Num)
 			} else {
-				lf, _ := ValToFloat64(lv); rf, _ := ValToFloat64(r)
+				lf, _ := valToFloat64(lv); rf, _ := valToFloat64(r)
 				res = lf > rf
 			}
 			sp++
 			if sp >= 64 { return nil, fmt.Errorf("VM stack overflow") }
-			stack[sp] = Value{Type: ValBool, Num: BoolToUint64(res)}
+			stack[sp] = Value{Type: ValBool, Num: boolToUint64(res)}
 		case OpLessGlobalConst:
 			gIdx := inst.Arg >> 16; cIdx := inst.Arg & 0xFFFF
 			val, _ := ctx.Get(consts[gIdx].Str)
-			lv := FromInterface(val); r := consts[cIdx]
-			res := false
+			lv := localFromInterface(val); r := consts[cIdx]; res := false
 			if lv.Type == ValInt && r.Type == ValInt {
 				res = int64(lv.Num) < int64(r.Num)
 			} else {
-				lf, _ := ValToFloat64(lv); rf, _ := ValToFloat64(r)
+				lf, _ := valToFloat64(lv); rf, _ := valToFloat64(r)
 				res = lf < rf
 			}
 			sp++
 			if sp >= 64 { return nil, fmt.Errorf("VM stack overflow") }
-			stack[sp] = Value{Type: ValBool, Num: BoolToUint64(res)}
+			stack[sp] = Value{Type: ValBool, Num: boolToUint64(res)}
 		case OpFusedCompareGlobalConstJumpIfFalse:
 			gIdx := int(inst.Arg >> 22) & 0x3FF
 			cIdx := int(inst.Arg >> 12) & 0x3FF
 			jTarget := int(inst.Arg) & 0xFFF
 			val, _ := ctx.Get(consts[gIdx].Str)
-			lv := FromInterface(val); r := consts[cIdx]
-			res := false
+			lv := localFromInterface(val); r := consts[cIdx]; res := false
 			if lv.Type == r.Type {
-				switch lv.Type {
-				case ValInt, ValFloat, ValBool: res = lv.Num == r.Num
-				case ValString: res = lv.Str == r.Str
-				case ValNil: res = true
-				}
+				if lv.Type == ValString { res = lv.Str == r.Str } else { res = lv.Num == r.Num }
 			} else {
-				lf, okL := ValToFloat64(lv); rf, okR := ValToFloat64(r)
+				lf, okL := valToFloat64(lv); rf, okR := valToFloat64(r)
 				if okL && okR { res = lf == rf }
 			}
 			if !res { pc = jTarget }
 		case OpGetGlobalJumpIfFalse:
 			gIdx := inst.Arg >> 16; jTarget := inst.Arg & 0xFFFF
 			val, _ := ctx.Get(consts[gIdx].Str)
-			if !IsValTruthy(FromInterface(val)) { pc = int(jTarget) }
+			if !isValTruthy(localFromInterface(val)) { pc = int(jTarget) }
 		case OpGetGlobalJumpIfTrue:
 			gIdx := inst.Arg >> 16; jTarget := inst.Arg & 0xFFFF
 			val, _ := ctx.Get(consts[gIdx].Str)
-			if IsValTruthy(FromInterface(val)) { pc = int(jTarget) }
+			if isValTruthy(localFromInterface(val)) { pc = int(jTarget) }
 		case OpConcat:
 			numArgs := int(inst.Arg)
 			totalLen := 0
@@ -625,8 +561,36 @@ func runVMGeneral(bc *RenderedBytecode, ctx Context) (any, error) {
 	return stack[sp].ToInterface(), nil
 }
 
+func valToFloat64(v Value) (float64, bool) {
+	switch v.Type {
+	case ValFloat: return math.Float64frombits(v.Num), true
+	case ValInt: return float64(int64(v.Num)), true
+	}
+	return 0, false
+}
 
+func isValTruthy(v Value) bool {
+	switch v.Type {
+	case ValBool: return v.Num != 0
+	case ValNil: return false
+	default: return true
+	}
+}
 
-var ValToFloat64 = types.ValToFloat64
-var IsValTruthy = types.IsValTruthy
-var BoolToUint64 = types.BoolToUint64
+func boolToUint64(b bool) uint64 {
+	if b { return 1 }
+	return 0
+}
+
+func localFromInterface(v any) Value {
+	switch val := v.(type) {
+	case int64: return Value{Type: ValInt, Num: uint64(val)}
+	case int: return Value{Type: ValInt, Num: uint64(val)}
+	case float64: return Value{Type: ValFloat, Num: math.Float64bits(val)}
+	case bool:
+		if val { return Value{Type: ValBool, Num: 1} }
+		return Value{Type: ValBool, Num: 0}
+	case string: return Value{Type: ValString, Str: val}
+	default: return Value{Type: ValNil}
+	}
+}
