@@ -5,7 +5,17 @@ package uwasa
 
 import (
 	"fmt"
+	"github.com/kamihama-railway/uwasa/rvm"
 )
+
+type Engine struct {
+	program          Node
+	bytecode         *RenderedBytecode
+	registerBytecode *rvm.RegisterBytecode
+	opts             EngineOptions
+	isConstant       bool
+	constantResult   any
+}
 
 type OptimizationLevel int
 
@@ -16,110 +26,102 @@ const (
 
 type EngineOptions struct {
 	OptimizationLevel OptimizationLevel
-	UseRecompiler     bool
-	UseRegisterVM     bool // Experimental: use register-based VM
-}
-
-type Engine struct {
-	program          Expression
-	bytecode         *RenderedBytecode
-	registerBytecode *RegisterBytecode
-	constantResult   any
-	isConstant       bool
+	UseVM              bool
+	UseRecompiler      bool
 }
 
 func NewEngine(input string) (*Engine, error) {
-	return NewEngineWithOptions(input, EngineOptions{OptimizationLevel: OptBasic})
+	return NewEngineWithOptions(input, EngineOptions{
+		OptimizationLevel: OptBasic,
+		UseVM:              true,
+		UseRecompiler:      false,
+	})
+}
+
+// NewEngineVM is a convenience function that creates an engine with VM enabled.
+func NewEngineVM(input string) (*Engine, error) {
+	return NewEngineWithOptions(input, EngineOptions{
+		OptimizationLevel: OptBasic,
+		UseVM:              true,
+		UseRecompiler:      false,
+	})
 }
 
 func NewEngineWithOptions(input string, opts EngineOptions) (*Engine, error) {
 	l := NewLexer(input)
-	defer lexerPool.Put(l)
+	defer LexerPool.Put(l)
 	p := NewParser(l)
-	defer parserPool.Put(p)
-
+	defer ParserPool.Put(p)
 	program := p.ParseProgram()
 	if len(p.Errors()) != 0 {
-		return nil, fmt.Errorf("parser errors: %v", p.Errors())
+		return nil, fmt.Errorf("parse errors: %v", p.Errors())
 	}
 
-	var optimized Node = program
+	e := &Engine{
+		program: program,
+		opts:    opts,
+	}
+
 	if opts.OptimizationLevel >= OptBasic {
-		optimized = Fold(optimized)
+		e.program = Fold(e.program)
 	}
 
 	if opts.UseRecompiler {
 		re := NewRecompiler()
-		var err error
-		optimized, err = re.Optimize(optimized)
+		optimized, err := re.Optimize(e.program)
 		if err != nil {
 			return nil, err
 		}
+		e.program = optimized
 	}
 
-	if optimized == nil {
-		return &Engine{program: nil, isConstant: true}, nil
-	}
-
-	engine := &Engine{program: optimized.(Expression)}
-
-	switch n := optimized.(type) {
-	case *NumberLiteral, *StringLiteral, *BooleanLiteral:
-		val, _ := Eval(n, nil)
-		engine.constantResult = val
-		engine.isConstant = true
-	}
-
-	return engine, nil
-}
-
-func NewEngineVM(input string) (*Engine, error) {
-	return NewEngineVMWithOptions(input, EngineOptions{OptimizationLevel: OptBasic})
-}
-
-func NewEngineVMWithOptions(input string, opts EngineOptions) (*Engine, error) {
-	l := NewLexer(input)
-	defer lexerPool.Put(l)
-	p := NewParser(l)
-	defer parserPool.Put(p)
-
-	program := p.ParseProgram()
-	if len(p.Errors()) != 0 {
-		return nil, fmt.Errorf("parser errors: %v", p.Errors())
-	}
-
-	if opts.UseRegisterVM {
-		c := NewRegisterCompiler()
-		// For now, register VM compiler doesn't have the full optimized pipeline like VMCompiler
-		// But we can manually fold
-		var optimized Node = program
-		if opts.OptimizationLevel >= OptBasic {
-			optimized = Fold(optimized)
+	// Constant path optimization
+	if program != nil {
+		switch n := e.program.(type) {
+		case *NumberLiteral:
+			e.isConstant = true
+			if n.IsInt {
+				e.constantResult = n.Int64Value
+			} else {
+				e.constantResult = n.Float64Value
+			}
+		case *StringLiteral:
+			e.isConstant = true
+			e.constantResult = n.Value
+		case *BooleanLiteral:
+			e.isConstant = true
+			e.constantResult = n.Value
 		}
-		bc, err := c.Compile(optimized)
+	} else {
+		// Nil program
+		e.isConstant = true
+		e.constantResult = nil
+	}
+
+	if opts.UseVM && !e.isConstant {
+		c := NewVMCompiler()
+		bc, err := c.Compile(e.program)
 		if err != nil {
 			return nil, err
 		}
-		// If the resulting bytecode is just returning a single constant, optimize it
-		if bc != nil && len(bc.Instructions) == 2 && bc.Instructions[0].Op == ROpLoadConst && bc.Instructions[1].Op == ROpReturn {
-			return &Engine{constantResult: bc.Constants[bc.Instructions[0].Arg].ToInterface(), isConstant: true}, nil
-		}
-		return &Engine{registerBytecode: bc}, nil
+		e.bytecode = bc
 	}
 
-	c := NewVMCompiler()
-	// VMCompiler will handle its own optimization levels internally
-	bc, err := c.CompileOptimized(program, opts)
+	return e, nil
+}
+
+func (e *Engine) UseRegisterVM() error {
+	if e.isConstant {
+		return nil
+	}
+	c := rvm.NewRegisterCompiler()
+	bc, err := c.Compile(e.program)
 	if err != nil {
-		return nil, err
+		return err
 	}
-
-	// If the resulting bytecode is just pushing a single constant, optimize it
-	if bc != nil && len(bc.Instructions) == 1 && bc.Instructions[0].Op == OpPush {
-		return &Engine{constantResult: bc.Constants[bc.Instructions[0].Arg].ToInterface(), isConstant: true}, nil
-	}
-
-	return &Engine{bytecode: bc}, nil
+	e.registerBytecode = bc
+	e.bytecode = nil // Clear stack bytecode
+	return nil
 }
 
 func (e *Engine) Execute(vars map[string]any) (any, error) {
@@ -129,11 +131,11 @@ func (e *Engine) Execute(vars map[string]any) (any, error) {
 
 	ctx := NewMapContext(vars)
 	defer func() {
-		ctx.vars = nil
-		contextPool.Put(ctx)
+		ctx.Vars = nil
+		MapContextPool.Put(ctx)
 	}()
 	if e.registerBytecode != nil {
-		return RunRegisterVM(e.registerBytecode, ctx)
+		return rvm.RunRegisterVM(e.registerBytecode, ctx)
 	}
 	if e.bytecode != nil {
 		return RunVM(e.bytecode, ctx)
@@ -147,7 +149,7 @@ func (e *Engine) ExecuteWithContext(ctx Context) (any, error) {
 	}
 
 	if e.registerBytecode != nil {
-		return RunRegisterVM(e.registerBytecode, ctx)
+		return rvm.RunRegisterVM(e.registerBytecode, ctx)
 	}
 	if e.bytecode != nil {
 		return RunVM(e.bytecode, ctx)

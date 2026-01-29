@@ -9,7 +9,7 @@ import (
 )
 
 type VMCompiler struct {
-	instructions []vmInstruction
+	instructions []VmInstruction
 	constants    []Value
 	constMap     map[any]int32
 	errors       []string
@@ -38,7 +38,7 @@ func (c *VMCompiler) peephole() {
 		return
 	}
 
-	newInsts := make([]vmInstruction, 0, len(c.instructions))
+	newInsts := make([]VmInstruction, 0, len(c.instructions))
 	oldToNew := make([]int, len(c.instructions)+1)
 
 	for i := 0; i < len(c.instructions); i++ {
@@ -58,7 +58,7 @@ func (c *VMCompiler) peephole() {
 
 			if gIdx < 1024 && cIdx < 1024 && jTarget < 4096 && c.instructions[i+2].Op == OpEqual {
 				fusedArg := (gIdx << 22) | (cIdx << 12) | jTarget
-				newInsts = append(newInsts, vmInstruction{Op: OpFusedCompareGlobalConstJumpIfFalse, Arg: fusedArg})
+				newInsts = append(newInsts, VmInstruction{Op: OpFusedCompareGlobalConstJumpIfFalse, Arg: fusedArg})
 				oldToNew[i+1] = len(newInsts) - 1
 				oldToNew[i+2] = len(newInsts) - 1
 				oldToNew[i+3] = len(newInsts) - 1
@@ -78,7 +78,7 @@ func (c *VMCompiler) peephole() {
 			if gIdx < 65536 && cIdx < 65536 {
 				// GetGlobal + Push + Add -> AddGlobal
 				if c.instructions[i+2].Op == OpAdd {
-					newInsts = append(newInsts, vmInstruction{Op: OpAddGlobal, Arg: (cIdx << 16) | gIdx})
+					newInsts = append(newInsts, VmInstruction{Op: OpAddGlobal, Arg: (cIdx << 16) | gIdx})
 					oldToNew[i+1] = len(newInsts) - 1
 					oldToNew[i+2] = len(newInsts) - 1
 					i += 2
@@ -94,7 +94,7 @@ func (c *VMCompiler) peephole() {
 				}
 
 				if op != 0 {
-					newInsts = append(newInsts, vmInstruction{Op: op, Arg: (gIdx << 16) | cIdx})
+					newInsts = append(newInsts, VmInstruction{Op: op, Arg: (gIdx << 16) | cIdx})
 					oldToNew[i+1] = len(newInsts) - 1
 					oldToNew[i+2] = len(newInsts) - 1
 					i += 2
@@ -112,7 +112,7 @@ func (c *VMCompiler) peephole() {
 			g1Idx := inst.Arg
 			g2Idx := c.instructions[i+1].Arg
 			if g1Idx < 65536 && g2Idx < 65536 {
-				newInsts = append(newInsts, vmInstruction{Op: OpAddGlobalGlobal, Arg: (g1Idx << 16) | g2Idx})
+				newInsts = append(newInsts, VmInstruction{Op: OpAddGlobalGlobal, Arg: (g1Idx << 16) | g2Idx})
 				oldToNew[i+1] = len(newInsts) - 1
 				oldToNew[i+2] = len(newInsts) - 1
 				i += 2
@@ -135,7 +135,7 @@ func (c *VMCompiler) peephole() {
 				}
 
 				if op != 0 {
-					newInsts = append(newInsts, vmInstruction{Op: op, Arg: (gIdx << 16) | jTarget})
+					newInsts = append(newInsts, VmInstruction{Op: op, Arg: (gIdx << 16) | jTarget})
 					oldToNew[i+1] = len(newInsts) - 1
 					i += 1
 					continue
@@ -168,105 +168,7 @@ func (c *VMCompiler) peephole() {
 }
 
 func (c *VMCompiler) CompileOptimized(node Node, opts EngineOptions) (*RenderedBytecode, error) {
-	optimized := node
-	if opts.OptimizationLevel >= OptBasic {
-		optimized = Fold(optimized)
-	}
-
-	if opts.UseRecompiler {
-		var err error
-		optimized, err = c.optimize(optimized)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	return c.Compile(optimized)
-}
-
-func (c *VMCompiler) optimize(node Node) (Node, error) {
-	res := c.simplify(node)
-	if len(c.errors) > 0 {
-		return nil, fmt.Errorf("VM static analysis errors: %v", c.errors)
-	}
-	return res, nil
-}
-
-func (c *VMCompiler) simplify(node Node) Node {
-	if node == nil { return nil }
-	switch n := node.(type) {
-	case *PrefixExpression:
-		n.Right = c.simplify(n.Right).(Expression)
-		if n.Operator == "-" {
-			if _, ok := n.Right.(*StringLiteral); ok {
-				c.errors = append(c.errors, "invalid operation: -string")
-			}
-		}
-		return n
-	case *InfixExpression:
-		n.Left = c.simplify(n.Left).(Expression)
-		n.Right = c.simplify(n.Right).(Expression)
-		c.checkTypeMismatch(n)
-
-		switch n.Operator {
-		case "+":
-			if isZero(n.Left) { return n.Right }
-			if isZero(n.Right) { return n.Left }
-		case "-":
-			if isZero(n.Right) { return n.Left }
-			if isSameIdentifier(n.Left, n.Right) {
-				return &NumberLiteral{Int64Value: 0, IsInt: true}
-			}
-		case "*":
-			if isZero(n.Left) || isZero(n.Right) { return &NumberLiteral{Int64Value: 0, IsInt: true} }
-			if isOne(n.Left) { return n.Right }
-			if isOne(n.Right) { return n.Left }
-		case "/":
-			if isZero(n.Right) {
-				c.errors = append(c.errors, "division by zero")
-				return n
-			}
-			if isOne(n.Right) { return n.Left }
-			if isSameIdentifier(n.Left, n.Right) && !hasSideEffects(n.Left) {
-				return &NumberLiteral{Int64Value: 1, IsInt: true}
-			}
-		case "==":
-			if isSameIdentifier(n.Left, n.Right) && !hasSideEffects(n.Left) {
-				return &BooleanLiteral{Value: true}
-			}
-		}
-		return n
-	case *IfExpression:
-		n.Condition = c.simplify(n.Condition).(Expression)
-		if n.Consequence != nil { n.Consequence = c.simplify(n.Consequence).(Expression) }
-		if n.Alternative != nil { n.Alternative = c.simplify(n.Alternative).(Expression) }
-		return n
-	case *AssignExpression:
-		n.Value = c.simplify(n.Value).(Expression)
-		return n
-	default:
-		return n
-	}
-}
-
-func (c *VMCompiler) checkTypeMismatch(ie *InfixExpression) {
-	left := ie.Left
-	right := ie.Right
-	_, okLS := left.(*StringLiteral)
-	_, okRS := right.(*StringLiteral)
-	_, okLN := left.(*NumberLiteral)
-	_, okRN := right.(*NumberLiteral)
-
-	switch ie.Operator {
-	case "-", "*", "/", "%", ">", "<", ">=", "<=":
-		if okLS || okRS {
-			c.errors = append(c.errors, fmt.Sprintf("invalid operation: string %s string/number", ie.Operator))
-		}
-	case "+":
-		if (okLS && okRN) || (okLN && okRS) {
-			c.errors = append(c.errors, "invalid operation: string + number mismatch")
-		}
-	}
+	return c.Compile(node)
 }
 
 func (c *VMCompiler) walk(node Node) error {
@@ -338,6 +240,9 @@ func (c *VMCompiler) walk(node Node) error {
 		case "/": c.emit(OpDiv, 0)
 		case "%": c.emit(OpMod, 0)
 		case "==": c.emit(OpEqual, 0)
+		case "!=":
+			c.emit(OpEqual, 0)
+			c.emit(OpNot, 0)
 		case ">": c.emit(OpGreater, 0)
 		case "<": c.emit(OpLess, 0)
 		case ">=": c.emit(OpGreaterEqual, 0)
@@ -415,7 +320,7 @@ func (c *VMCompiler) addConstant(v Value) int32 {
 }
 
 func (c *VMCompiler) emit(op OpCode, arg int32) int {
-	c.instructions = append(c.instructions, vmInstruction{Op: op, Arg: arg})
+	c.instructions = append(c.instructions, VmInstruction{Op: op, Arg: arg})
 	return len(c.instructions) - 1
 }
 

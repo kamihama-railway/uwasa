@@ -1,10 +1,11 @@
 // Copyright (c) 2026 WJQserver, Kamihama Railway Group. All rights reserved.
 // Licensed under the GNU Affero General Public License, version 3.0 (the "AGPL").
 
-package uwasa
+package uwasa_test
 
 import (
 	"testing"
+	"github.com/kamihama-railway/uwasa"
 )
 
 func TestVM(t *testing.T) {
@@ -39,7 +40,7 @@ func TestVM(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		engine, err := NewEngineVM(tt.input)
+		engine, err := uwasa.NewEngine(tt.input)
 		if err != nil {
 			t.Errorf("input %s: NewEngine error: %v", tt.input, err)
 			continue
@@ -61,7 +62,7 @@ func TestVM_ShortCircuit(t *testing.T) {
 
 	// If false, then (a=2) should not execute. Result should be false.
 	input := "false && (a = 2)"
-	engine, _ := NewEngineVM(input)
+	engine, _ := uwasa.NewEngine(input)
 	vars := map[string]any{"a": int64(0)}
 	got, _ := engine.Execute(vars)
 	if got != false {
@@ -73,7 +74,7 @@ func TestVM_ShortCircuit(t *testing.T) {
 
 	// If true, then (a=2) should not execute. Result should be true.
 	input2 := "true || (a = 2)"
-	engine2, _ := NewEngineVM(input2)
+	engine2, _ := uwasa.NewEngine(input2)
 	vars2 := map[string]any{"a": int64(0)}
 	got2, _ := engine2.Execute(vars2)
 	if got2 != true {
@@ -91,9 +92,9 @@ func TestVMStackOverflow(t *testing.T) {
 	for i := 0; i < depth; i++ {
 		expr = "a + (" + expr + ")"
 	}
-	engine, err := NewEngineVMWithOptions(expr, EngineOptions{OptimizationLevel: OptNone})
+	engine, err := uwasa.NewEngineWithOptions(expr, uwasa.EngineOptions{OptimizationLevel: uwasa.OptNone, UseVM: true})
 	if err != nil {
-		t.Fatalf("NewEngineVM failed: %v", err)
+		t.Fatalf("NewEngine failed: %v", err)
 	}
 	_, err = engine.Execute(map[string]any{"a": 1})
 	if err == nil || err.Error() != "VM stack overflow" {
@@ -105,9 +106,9 @@ func TestVMStackOverflow(t *testing.T) {
 	for i := 0; i < depth; i++ {
 		expr2 = "(a+1) + (" + expr2 + ")"
 	}
-	engine2, err := NewEngineVMWithOptions(expr2, EngineOptions{OptimizationLevel: OptBasic})
+	engine2, err := uwasa.NewEngineWithOptions(expr2, uwasa.EngineOptions{OptimizationLevel: uwasa.OptBasic, UseVM: true})
 	if err != nil {
-		t.Fatalf("NewEngineVM failed: %v", err)
+		t.Fatalf("NewEngine failed: %v", err)
 	}
 	_, err = engine2.Execute(map[string]any{"a": 1})
 	if err == nil || err.Error() != "VM stack overflow" {

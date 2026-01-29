@@ -1,7 +1,7 @@
 // Copyright (c) 2026 WJQserver, Kamihama Railway Group. All rights reserved.
 // Licensed under the GNU Affero General Public License, version 3.0 (the "AGPL").
 
-package uwasa
+package ast
 
 import "fmt"
 
@@ -77,10 +77,10 @@ func (ie *InfixExpression) String() string {
 
 type IfExpression struct {
 	Condition   Expression
-	Consequence Expression // for 'is' or 'then'
-	Alternative Expression // for 'else'
-	IsThen      bool       // true if 'then', false if 'is'
-	IsSimple    bool       // true if only 'if <cond>'
+	Consequence Expression
+	Alternative Expression
+	IsThen      bool
+	IsSimple    bool
 }
 
 func (ie *IfExpression) expressionNode() {}

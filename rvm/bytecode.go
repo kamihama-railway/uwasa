@@ -1,9 +1,12 @@
 // Copyright (c) 2026 WJQserver, Kamihama Railway Group. All rights reserved.
 // Licensed under the GNU Affero General Public License, version 3.0 (the "AGPL").
 
-package uwasa
+package rvm
 
-import "fmt"
+import (
+	"fmt"
+	"github.com/kamihama-railway/uwasa/types"
+)
 
 type ROpCode byte
 
@@ -62,7 +65,7 @@ func (o ROpCode) String() string {
 	}
 }
 
-type regInstruction struct {
+type RegInstruction struct {
 	Op   ROpCode
 	Dest uint8
 	Src1 uint8
@@ -71,7 +74,7 @@ type regInstruction struct {
 }
 
 type RegisterBytecode struct {
-	Instructions []regInstruction
-	Constants    []Value
+	Instructions []RegInstruction
+	Constants    []types.Value
 	MaxRegisters uint8
 }

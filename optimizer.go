@@ -3,7 +3,9 @@
 
 package uwasa
 
-import "fmt"
+import (
+	"fmt"
+)
 
 func Fold(node Node) Node {
 	if node == nil {
@@ -180,8 +182,6 @@ func Fold(node Node) Node {
 				n.Arguments[i] = folded.(Expression)
 			}
 			if _, ok := n.Arguments[i].(Literal); !ok {
-				// We consider StringLiteral, NumberLiteral, BooleanLiteral as constants
-				// Let's define a Literal interface or check specifically
 				switch n.Arguments[i].(type) {
 				case *StringLiteral, *NumberLiteral, *BooleanLiteral:
 				default:
@@ -221,10 +221,6 @@ type Literal interface {
 	Expression
 	isLiteral()
 }
-
-func (n *NumberLiteral) isLiteral()  {}
-func (n *StringLiteral) isLiteral()  {}
-func (n *BooleanLiteral) isLiteral() {}
 
 func getFloatValues(l, r *NumberLiteral) (float64, float64) {
 	var lv, rv float64

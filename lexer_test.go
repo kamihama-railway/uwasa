@@ -45,7 +45,7 @@ func TestLexer(t *testing.T) {
 				i, tt.expectedLiteral, tok.Literal)
 		}
 	}
-	lexerPool.Put(l)
+	LexerPool.Put(l)
 }
 
 func TestLexerKeywords(t *testing.T) {
@@ -74,7 +74,7 @@ func TestLexerKeywords(t *testing.T) {
 				i, tt.expectedLiteral, tok.Literal)
 		}
 	}
-	lexerPool.Put(l)
+	LexerPool.Put(l)
 }
 
 func TestLexerNumbersAndIdents(t *testing.T) {
@@ -101,7 +101,7 @@ func TestLexerNumbersAndIdents(t *testing.T) {
 				i, tt.expectedLiteral, tok.Literal)
 		}
 	}
-	lexerPool.Put(l)
+	LexerPool.Put(l)
 }
 
 func TestLexer2(t *testing.T) {

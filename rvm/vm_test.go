@@ -1,10 +1,11 @@
 // Copyright (c) 2026 WJQserver, Kamihama Railway Group. All rights reserved.
 // Licensed under the GNU Affero General Public License, version 3.0 (the "AGPL").
 
-package uwasa
+package rvm_test
 
 import (
 	"testing"
+	"github.com/kamihama-railway/uwasa"
 )
 
 func TestRegisterVM(t *testing.T) {
@@ -39,9 +40,14 @@ func TestRegisterVM(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		engine, err := NewEngineVMWithOptions(tt.input, EngineOptions{UseRegisterVM: true})
+		engine, err := uwasa.NewEngine(tt.input)
 		if err != nil {
 			t.Errorf("input %s: NewEngine error: %v", tt.input, err)
+			continue
+		}
+		err = engine.UseRegisterVM()
+		if err != nil {
+			t.Errorf("input %s: UseRegisterVM error: %v", tt.input, err)
 			continue
 		}
 		got, err := engine.Execute(tt.vars)
@@ -58,7 +64,8 @@ func TestRegisterVM(t *testing.T) {
 func TestRegisterVM_ShortCircuit(t *testing.T) {
 	// Test if side effects are skipped
 	input := "false && (a = 2)"
-	engine, _ := NewEngineVMWithOptions(input, EngineOptions{UseRegisterVM: true})
+	engine, _ := uwasa.NewEngine(input)
+	engine.UseRegisterVM()
 	vars := map[string]any{"a": int64(0)}
 	got, _ := engine.Execute(vars)
 	if got != false {
@@ -69,7 +76,8 @@ func TestRegisterVM_ShortCircuit(t *testing.T) {
 	}
 
 	input2 := "true || (a = 2)"
-	engine2, _ := NewEngineVMWithOptions(input2, EngineOptions{UseRegisterVM: true})
+	engine2, _ := uwasa.NewEngine(input2)
+	engine2.UseRegisterVM()
 	vars2 := map[string]any{"a": int64(0)}
 	got2, _ := engine2.Execute(vars2)
 	if got2 != true {

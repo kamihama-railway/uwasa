@@ -4,9 +4,7 @@
 package uwasa
 
 import (
-	"bytes"
 	"fmt"
-	"sync"
 )
 
 var (
@@ -98,7 +96,7 @@ func Eval(node Node, ctx Context) (any, error) {
 			args[i] = val
 		}
 		if ident, ok := n.Function.(*Identifier); ok {
-			if builtin, ok := builtins[ident.Value]; ok {
+			if builtin, ok := Builtins[ident.Value]; ok {
 				return builtin(args...)
 			}
 			return nil, fmt.Errorf("builtin function not found: %s", ident.Value)
@@ -131,7 +129,7 @@ func evalInfixExpression(operator string, left, right any) (any, error) {
 	switch operator {
 	case "+", "-", "*", "/", "%":
 		return evalArithmetic(operator, left, right)
-	case "==", ">", "<", ">=", "<=":
+	case "==", "!=", ">", "<", ">=", "<=":
 		return evalComparison(operator, left, right)
 	}
 	return nil, fmt.Errorf("unknown operator: %T %s %T", left, operator, right)
@@ -165,8 +163,8 @@ func evalArithmetic(operator string, left, right any) (any, error) {
 	}
 
 	// Mixed or float
-	fl, okFL := toFloat64(left)
-	fr, okFR := toFloat64(right)
+	fl, okFL := ValToFloat64(FromInterface(left))
+	fr, okFR := ValToFloat64(FromInterface(right))
 	if okFL && okFR {
 		switch operator {
 		case "+": return fl + fr, nil
@@ -188,6 +186,7 @@ func evalComparison(operator string, left, right any) (any, error) {
 	if okL && okR {
 		switch operator {
 		case "==": return boolToAny(il == ir), nil
+		case "!=": return boolToAny(il != ir), nil
 		case ">":  return boolToAny(il > ir), nil
 		case "<":  return boolToAny(il < ir), nil
 		case ">=": return boolToAny(il >= ir), nil
@@ -196,11 +195,12 @@ func evalComparison(operator string, left, right any) (any, error) {
 	}
 
 	// Mixed or float
-	fl, okFL := toFloat64(left)
-	fr, okFR := toFloat64(right)
+	fl, okFL := ValToFloat64(FromInterface(left))
+	fr, okFR := ValToFloat64(FromInterface(right))
 	if okFL && okFR {
 		switch operator {
 		case "==": return boolToAny(fl == fr), nil
+		case "!=": return boolToAny(fl != fr), nil
 		case ">":  return boolToAny(fl > fr), nil
 		case "<":  return boolToAny(fl < fr), nil
 		case ">=": return boolToAny(fl >= fr), nil
@@ -211,63 +211,12 @@ func evalComparison(operator string, left, right any) (any, error) {
 	if operator == "==" {
 		return boolToAny(left == right), nil
 	}
+	if operator == "!=" {
+		return boolToAny(left != right), nil
+	}
 
 	return nil, fmt.Errorf("invalid comparison: %T %s %T", left, operator, right)
 }
-
-var bufferPool = sync.Pool{
-	New: func() any {
-		return new(bytes.Buffer)
-	},
-}
-
-type BuiltinFunc func(args ...any) (any, error)
-
-var builtins = map[string]BuiltinFunc{
-	"concat": func(args ...any) (any, error) {
-		// 1. Pre-calculate total length
-		totalLen := 0
-		argStrings := make([]string, len(args))
-		for i, arg := range args {
-			switch v := arg.(type) {
-			case string:
-				argStrings[i] = v
-			case int64:
-				argStrings[i] = fmt.Sprintf("%d", v)
-			case float64:
-				argStrings[i] = fmt.Sprintf("%g", v)
-			case bool:
-				argStrings[i] = fmt.Sprintf("%v", v)
-			default:
-				argStrings[i] = fmt.Sprintf("%v", v)
-			}
-			totalLen += len(argStrings[i])
-		}
-
-		// 2. Use pooled buffer
-		buf := bufferPool.Get().(*bytes.Buffer)
-		buf.Reset()
-		buf.Grow(totalLen)
-		for _, s := range argStrings {
-			buf.WriteString(s)
-		}
-		res := buf.String()
-		bufferPool.Put(buf)
-		return res, nil
-	},
-}
-
-func toFloat64(v any) (float64, bool) {
-	switch val := v.(type) {
-	case float64: return val, true
-	case int64:   return float64(val), true
-	case int:     return float64(val), true
-	case float32: return float64(val), true
-	case int32:   return float64(val), true
-	}
-	return 0, false
-}
-
 
 func evalIfExpression(ie *IfExpression, ctx Context) (any, error) {
 	cond, err := Eval(ie.Condition, ctx)
