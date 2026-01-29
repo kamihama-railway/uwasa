@@ -25,6 +25,9 @@ func TestNeoExVM(t *testing.T) {
 		{"a == 10 || b == 20", map[string]any{"a": int64(10), "b": int64(0)}, true},
 		{"!true", nil, false},
 		{"-10 + 20", nil, int64(10)},
+		{"10 - a", map[string]any{"a": int64(3)}, int64(7)},
+		{"10 / a", map[string]any{"a": int64(2)}, int64(5)},
+		{"\"a\" + b", map[string]any{"b": "b"}, "ab"},
 	}
 
 	for _, tt := range tests {
@@ -89,7 +92,7 @@ func TestNeoExVMStackOverflow(t *testing.T) {
 
 func TestNeoExVM_StringFusion(t *testing.T) {
 	input := `"a" + "b" + c + d + "e"`
-	c := NewNeoExCompiler(input)
+	c := NewNeoCompiler(input)
 	bc, err := c.Compile()
 	if err != nil {
 		t.Fatalf("Compile error: %v", err)

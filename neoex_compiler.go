@@ -15,7 +15,7 @@ type compilationValue struct {
 	isString bool
 }
 
-type NeoExCompiler struct {
+type NeoCompiler struct {
 	lexer     *Lexer
 	curToken  Token
 	peekToken Token
@@ -28,9 +28,9 @@ type NeoExCompiler struct {
 	errors  []string
 }
 
-func NewNeoExCompiler(input string) *NeoExCompiler {
+func NewNeoCompiler(input string) *NeoCompiler {
 	l := NewLexer(input)
-	c := &NeoExCompiler{
+	c := &NeoCompiler{
 		lexer:    l,
 		constMap: make(map[any]int32),
 	}
@@ -39,12 +39,12 @@ func NewNeoExCompiler(input string) *NeoExCompiler {
 	return c
 }
 
-func (c *NeoExCompiler) nextToken() {
+func (c *NeoCompiler) nextToken() {
 	c.curToken = c.peekToken
 	c.peekToken = c.lexer.NextToken()
 }
 
-func (c *NeoExCompiler) Compile() (*NeoBytecode, error) {
+func (c *NeoCompiler) Compile() (*NeoBytecode, error) {
 	val, err := c.parseExpression(LOWEST)
 	if err != nil {
 		return nil, err
@@ -67,7 +67,7 @@ func (c *NeoExCompiler) Compile() (*NeoBytecode, error) {
 	}, nil
 }
 
-func (c *NeoExCompiler) parseExpression(precedence int) (compilationValue, error) {
+func (c *NeoCompiler) parseExpression(precedence int) (compilationValue, error) {
 	prefix := c.getPrefixFn(c.curToken.Type)
 	if prefix == nil {
 		return compilationValue{}, fmt.Errorf("no prefix parsing function for %s", c.curToken.Type)
@@ -94,15 +94,15 @@ func (c *NeoExCompiler) parseExpression(precedence int) (compilationValue, error
 	return left, nil
 }
 
-func (c *NeoExCompiler) curPrecedence() int {
+func (c *NeoCompiler) curPrecedence() int {
 	return getPrecedence(c.curToken.Type)
 }
 
-func (c *NeoExCompiler) peekPrecedence() int {
+func (c *NeoCompiler) peekPrecedence() int {
 	return getPrecedence(c.peekToken.Type)
 }
 
-func (c *NeoExCompiler) getPrefixFn(t TokenType) func() (compilationValue, error) {
+func (c *NeoCompiler) getPrefixFn(t TokenType) func() (compilationValue, error) {
 	switch t {
 	case TokenIdent: return c.parseIdentifier
 	case TokenNumber: return c.parseNumberLiteral
@@ -115,7 +115,7 @@ func (c *NeoExCompiler) getPrefixFn(t TokenType) func() (compilationValue, error
 	}
 }
 
-func (c *NeoExCompiler) getInfixFn(t TokenType) func(compilationValue) (compilationValue, error) {
+func (c *NeoCompiler) getInfixFn(t TokenType) func(compilationValue) (compilationValue, error) {
 	switch t {
 	case TokenPlus, TokenMinus, TokenAsterisk, TokenSlash, TokenPercent,
 		TokenEq, TokenGt, TokenLt, TokenGe, TokenLe, TokenAnd, TokenOr:
@@ -129,7 +129,7 @@ func (c *NeoExCompiler) getInfixFn(t TokenType) func(compilationValue) (compilat
 	}
 }
 
-func (c *NeoExCompiler) parseIdentifier() (compilationValue, error) {
+func (c *NeoCompiler) parseIdentifier() (compilationValue, error) {
 	c.emit(NeoOpGetGlobal, c.addConstant(Value{Type: ValString, Str: c.curToken.Literal}))
 	return compilationValue{isConst: false}, nil
 }
@@ -143,7 +143,7 @@ func neoContainsDot(s string) bool {
 	return false
 }
 
-func (c *NeoExCompiler) parseNumberLiteral() (compilationValue, error) {
+func (c *NeoCompiler) parseNumberLiteral() (compilationValue, error) {
 	v, err := strconv.ParseFloat(c.curToken.Literal, 64)
 	if err != nil {
 		return compilationValue{}, err
@@ -157,17 +157,17 @@ func (c *NeoExCompiler) parseNumberLiteral() (compilationValue, error) {
 	return compilationValue{isConst: true, val: val}, nil
 }
 
-func (c *NeoExCompiler) parseStringLiteral() (compilationValue, error) {
+func (c *NeoCompiler) parseStringLiteral() (compilationValue, error) {
 	return compilationValue{isConst: true, val: Value{Type: ValString, Str: c.curToken.Literal}, isString: true}, nil
 }
 
-func (c *NeoExCompiler) parseBooleanLiteral() (compilationValue, error) {
+func (c *NeoCompiler) parseBooleanLiteral() (compilationValue, error) {
 	val := uint64(0)
 	if c.curToken.Type == TokenTrue { val = 1 }
 	return compilationValue{isConst: true, val: Value{Type: ValBool, Num: val}}, nil
 }
 
-func (c *NeoExCompiler) parsePrefixExpression() (compilationValue, error) {
+func (c *NeoCompiler) parsePrefixExpression() (compilationValue, error) {
 	op := c.curToken.Literal
 	c.nextToken()
 	right, err := c.parseExpression(PREFIX)
@@ -199,7 +199,7 @@ func (c *NeoExCompiler) parsePrefixExpression() (compilationValue, error) {
 	return compilationValue{isConst: false}, nil
 }
 
-func (c *NeoExCompiler) parseGroupedExpression() (compilationValue, error) {
+func (c *NeoCompiler) parseGroupedExpression() (compilationValue, error) {
 	c.nextToken()
 	val, err := c.parseExpression(LOWEST)
 	if err != nil { return compilationValue{}, err }
@@ -210,7 +210,12 @@ func (c *NeoExCompiler) parseGroupedExpression() (compilationValue, error) {
 	return val, nil
 }
 
-func (c *NeoExCompiler) parseInfixExpression(left compilationValue) (compilationValue, error) {
+func (c *NeoCompiler) peekTokenIsLiteral() bool {
+	t := c.peekToken.Type
+	return t == TokenNumber || t == TokenString || t == TokenTrue || t == TokenFalse
+}
+
+func (c *NeoCompiler) parseInfixExpression(left compilationValue) (compilationValue, error) {
 	op := c.curToken.Literal
 	precedence := c.curPrecedence()
 
@@ -225,48 +230,61 @@ func (c *NeoExCompiler) parseInfixExpression(left compilationValue) (compilation
 			c.instructions = c.instructions[:lastIdx]
 		}
 
+		if left.isConst && !c.peekTokenIsLiteral() {
+			c.emitPush(left.val)
+			left.isConst = false
+		}
+
 		c.nextToken()
 		right, err := c.parseExpression(precedence)
-		if err != nil { return compilationValue{}, err }
+		if err != nil {
+			return compilationValue{}, err
+		}
 
 		if left.isConst && right.isConst {
 			res, ok := c.foldInfix(left.val, right.val, op)
 			if ok {
-				// Re-patching if we removed Concat? No, if left was const, lastIdx wouldn't be Concat.
 				return compilationValue{isConst: true, val: res, isString: true}, nil
 			}
 		}
 
-		if right.isConst { c.emitPush(right.val) }
+		if left.isConst {
+			c.emitPush(left.val)
+		}
+		if right.isConst {
+			c.emitPush(right.val)
+		}
 
 		if canFuse {
 			c.emit(NeoOpConcat, nArgs+1)
 		} else {
-			if left.isConst { c.emitPush(left.val) }
 			c.emit(NeoOpConcat, 2)
 		}
 		return compilationValue{isConst: false, isString: true}, nil
 	}
 
 	if op == "&&" {
-		// Only fold if left is false, but we can't easily skip right side tokens without emitting
-		// unless we add a "skip" mode. For now, let's just use the standard emission which handles short-circuiting at runtime.
-		// Wait, if left is constant true, we can just return right.
-		if left.isConst && isValTruthy(left.val) {
-			c.nextToken()
-			return c.parseExpression(precedence)
-		}
-
-		if !left.isConst {
-			// already emitted
-		} else {
-			c.emitPush(left.val)
+		if left.isConst {
+			if isValTruthy(left.val) {
+				c.nextToken()
+				return c.parseExpression(precedence)
+			} else {
+				// Folded to false
+				oldDiscard := c.discard
+				c.discard = true
+				c.nextToken()
+				c.parseExpression(precedence)
+				c.discard = oldDiscard
+				return left, nil
+			}
 		}
 
 		jumpFalse := c.emit(NeoOpJumpIfFalse, 0)
 		c.nextToken()
 		right, err := c.parseExpression(precedence)
-		if err != nil { return compilationValue{}, err }
+		if err != nil {
+			return compilationValue{}, err
+		}
 
 		if right.isConst {
 			c.emitPush(right.val)
@@ -282,21 +300,27 @@ func (c *NeoExCompiler) parseInfixExpression(left compilationValue) (compilation
 	}
 
 	if op == "||" {
-		if left.isConst && !isValTruthy(left.val) {
-			c.nextToken()
-			return c.parseExpression(precedence)
-		}
-
-		if !left.isConst {
-			// already emitted
-		} else {
-			c.emitPush(left.val)
+		if left.isConst {
+			if !isValTruthy(left.val) {
+				c.nextToken()
+				return c.parseExpression(precedence)
+			} else {
+				// Folded to true
+				oldDiscard := c.discard
+				c.discard = true
+				c.nextToken()
+				c.parseExpression(precedence)
+				c.discard = oldDiscard
+				return left, nil
+			}
 		}
 
 		jumpTrue := c.emit(NeoOpJumpIfTrue, 0)
 		c.nextToken()
 		right, err := c.parseExpression(precedence)
-		if err != nil { return compilationValue{}, err }
+		if err != nil {
+			return compilationValue{}, err
+		}
 
 		if right.isConst {
 			c.emitPush(right.val)
@@ -311,9 +335,16 @@ func (c *NeoExCompiler) parseInfixExpression(left compilationValue) (compilation
 		return compilationValue{isConst: false}, nil
 	}
 
+	if left.isConst && !c.peekTokenIsLiteral() {
+		c.emitPush(left.val)
+		left.isConst = false
+	}
+
 	c.nextToken()
 	right, err := c.parseExpression(precedence)
-	if err != nil { return compilationValue{}, err }
+	if err != nil {
+		return compilationValue{}, err
+	}
 
 	if left.isConst && right.isConst {
 		res, ok := c.foldInfix(left.val, right.val, op)
@@ -348,8 +379,12 @@ func (c *NeoExCompiler) parseInfixExpression(left compilationValue) (compilation
 		if right.isConst && neoIsOne(right.val) { return left, nil }
 	}
 
-	if left.isConst { c.emitPush(left.val) }
-	if right.isConst { c.emitPush(right.val) }
+	if left.isConst {
+		c.emitPush(left.val)
+	}
+	if right.isConst {
+		c.emitPush(right.val)
+	}
 
 	switch op {
 	case "+":
@@ -395,49 +430,136 @@ func (c *NeoExCompiler) parseInfixExpression(left compilationValue) (compilation
 	return compilationValue{isConst: false}, nil
 }
 
-func (c *NeoExCompiler) foldInfix(l, r Value, op string) (Value, bool) {
+func (c *NeoCompiler) foldInfix(l, r Value, op string) (Value, bool) {
 	switch op {
 	case "+":
-		if l.Type == ValInt && r.Type == ValInt { return Value{Type: ValInt, Num: l.Num + r.Num}, true }
-		if l.Type == ValString && r.Type == ValString { return Value{Type: ValString, Str: l.Str + r.Str}, true }
-		lf, okL := valToFloat64(l); rf, okR := valToFloat64(r)
-		if okL && okR { return Value{Type: ValFloat, Num: math.Float64bits(lf + rf)}, true }
+		if l.Type == ValInt && r.Type == ValInt {
+			return Value{Type: ValInt, Num: l.Num + r.Num}, true
+		}
+		if l.Type == ValString && r.Type == ValString {
+			return Value{Type: ValString, Str: l.Str + r.Str}, true
+		}
+		lf, okL := valToFloat64(l)
+		rf, okR := valToFloat64(r)
+		if okL && okR {
+			return Value{Type: ValFloat, Num: math.Float64bits(lf + rf)}, true
+		}
 	case "-":
-		if l.Type == ValInt && r.Type == ValInt { return Value{Type: ValInt, Num: l.Num - r.Num}, true }
-		lf, okL := valToFloat64(l); rf, okR := valToFloat64(r)
-		if okL && okR { return Value{Type: ValFloat, Num: math.Float64bits(lf - rf)}, true }
+		if l.Type == ValInt && r.Type == ValInt {
+			return Value{Type: ValInt, Num: l.Num - r.Num}, true
+		}
+		lf, okL := valToFloat64(l)
+		rf, okR := valToFloat64(r)
+		if okL && okR {
+			return Value{Type: ValFloat, Num: math.Float64bits(lf - rf)}, true
+		}
 	case "*":
-		if l.Type == ValInt && r.Type == ValInt { return Value{Type: ValInt, Num: l.Num * r.Num}, true }
-		lf, okL := valToFloat64(l); rf, okR := valToFloat64(r)
-		if okL && okR { return Value{Type: ValFloat, Num: math.Float64bits(lf * rf)}, true }
+		if l.Type == ValInt && r.Type == ValInt {
+			return Value{Type: ValInt, Num: l.Num * r.Num}, true
+		}
+		lf, okL := valToFloat64(l)
+		rf, okR := valToFloat64(r)
+		if okL && okR {
+			return Value{Type: ValFloat, Num: math.Float64bits(lf * rf)}, true
+		}
 	case "/":
 		if (r.Type == ValInt && r.Num == 0) || (r.Type == ValFloat && math.Float64frombits(r.Num) == 0) {
 			c.errors = append(c.errors, "division by zero")
 			return Value{}, false
 		}
-		if l.Type == ValInt && r.Type == ValInt { return Value{Type: ValInt, Num: l.Num / r.Num}, true }
-		lf, okL := valToFloat64(l); rf, okR := valToFloat64(r)
-		if okL && okR { return Value{Type: ValFloat, Num: math.Float64bits(lf / rf)}, true }
-	case "==":
-		res := false
-		if l.Type == r.Type {
-			switch l.Type {
-			case ValInt, ValFloat, ValBool: res = l.Num == r.Num
-			case ValString: res = l.Str == r.Str
-			case ValNil: res = true
-			}
-		} else {
-			lf, okL := valToFloat64(l); rf, okR := valToFloat64(r)
-			if okL && okR { res = lf == rf }
+		if l.Type == ValInt && r.Type == ValInt {
+			return Value{Type: ValInt, Num: l.Num / r.Num}, true
 		}
-		return Value{Type: ValBool, Num: boolToUint64(res)}, true
+		lf, okL := valToFloat64(l)
+		rf, okR := valToFloat64(r)
+		if okL && okR {
+			return Value{Type: ValFloat, Num: math.Float64bits(lf / rf)}, true
+		}
+	case "%":
+		if r.Type == ValInt && r.Num == 0 {
+			c.errors = append(c.errors, "division by zero")
+			return Value{}, false
+		}
+		if l.Type == ValInt && r.Type == ValInt {
+			return Value{Type: ValInt, Num: l.Num % r.Num}, true
+		}
+	case "==":
+		return Value{Type: ValBool, Num: boolToUint64(c.compare(l, r) == 0)}, true
+	case ">":
+		return Value{Type: ValBool, Num: boolToUint64(c.compare(l, r) > 0)}, true
+	case "<":
+		return Value{Type: ValBool, Num: boolToUint64(c.compare(l, r) < 0)}, true
+	case ">=":
+		return Value{Type: ValBool, Num: boolToUint64(c.compare(l, r) >= 0)}, true
+	case "<=":
+		return Value{Type: ValBool, Num: boolToUint64(c.compare(l, r) <= 0)}, true
 	}
 	return Value{}, false
 }
 
-func (c *NeoExCompiler) parseAssignExpression(left compilationValue) (compilationValue, error) {
+func (c *NeoCompiler) compare(l, r Value) int {
+	if l.Type == r.Type {
+		switch l.Type {
+		case ValInt:
+			if int64(l.Num) < int64(r.Num) {
+				return -1
+			}
+			if int64(l.Num) > int64(r.Num) {
+				return 1
+			}
+			return 0
+		case ValFloat:
+			lf := math.Float64frombits(l.Num)
+			rf := math.Float64frombits(r.Num)
+			if lf < rf {
+				return -1
+			}
+			if lf > rf {
+				return 1
+			}
+			return 0
+		case ValString:
+			if l.Str < r.Str {
+				return -1
+			}
+			if l.Str > r.Str {
+				return 1
+			}
+			return 0
+		case ValBool:
+			if l.Num < r.Num {
+				return -1
+			}
+			if l.Num > r.Num {
+				return 1
+			}
+			return 0
+		case ValNil:
+			return 0
+		}
+	}
+	lf, okL := valToFloat64(l)
+	rf, okR := valToFloat64(r)
+	if okL && okR {
+		if lf < rf {
+			return -1
+		}
+		if lf > rf {
+			return 1
+		}
+		return 0
+	}
+	return 0 // mismatched types usually equal false in engine
+}
+
+func (c *NeoCompiler) parseAssignExpression(left compilationValue) (compilationValue, error) {
 	if left.isConst {
 		return compilationValue{}, fmt.Errorf("left side of assignment must be an identifier")
+	}
+	if c.discard {
+		c.nextToken()
+		_, err := c.parseExpression(ASSIGN)
+		return compilationValue{isConst: false}, err
 	}
 	lastInst := c.instructions[len(c.instructions)-1]
 	if lastInst.Op != NeoOpGetGlobal {
@@ -458,9 +580,28 @@ func (c *NeoExCompiler) parseAssignExpression(left compilationValue) (compilatio
 	return compilationValue{isConst: false}, nil
 }
 
-func (c *NeoExCompiler) parseCallExpression(left compilationValue) (compilationValue, error) {
+func (c *NeoCompiler) parseCallExpression(left compilationValue) (compilationValue, error) {
 	if left.isConst {
 		return compilationValue{}, fmt.Errorf("function call must be on an identifier")
+	}
+	if c.discard {
+		numArgs := 0
+		if c.peekToken.Type != TokenRParen {
+			c.nextToken()
+			c.parseExpression(LOWEST)
+			numArgs++
+			for c.peekToken.Type == TokenComma {
+				c.nextToken()
+				c.nextToken()
+				c.parseExpression(LOWEST)
+				numArgs++
+			}
+		}
+		if c.peekToken.Type != TokenRParen {
+			return compilationValue{}, fmt.Errorf("expected ), got %s", c.peekToken.Type)
+		}
+		c.nextToken()
+		return compilationValue{isConst: false}, nil
 	}
 	lastInst := c.instructions[len(c.instructions)-1]
 	if lastInst.Op != NeoOpGetGlobal {
@@ -501,7 +642,7 @@ func (c *NeoExCompiler) parseCallExpression(left compilationValue) (compilationV
 	return compilationValue{isConst: false}, nil
 }
 
-func (c *NeoExCompiler) parseIfExpression() (compilationValue, error) {
+func (c *NeoCompiler) parseIfExpression() (compilationValue, error) {
 	c.nextToken() // skip if
 	cond, err := c.parseExpression(LOWEST)
 	if err != nil { return compilationValue{}, err }
@@ -631,17 +772,17 @@ func (c *NeoExCompiler) parseIfExpression() (compilationValue, error) {
 	return compilationValue{}, fmt.Errorf("expected then or is after if condition, got %s", c.peekToken.Type)
 }
 
-func (c *NeoExCompiler) emit(op NeoOpCode, arg int32) int {
+func (c *NeoCompiler) emit(op NeoOpCode, arg int32) int {
 	if c.discard { return -1 }
 	c.instructions = append(c.instructions, neoInstruction{Op: op, Arg: arg})
 	return len(c.instructions) - 1
 }
 
-func (c *NeoExCompiler) emitPush(v Value) int {
+func (c *NeoCompiler) emitPush(v Value) int {
 	return c.emit(NeoOpPush, c.addConstant(v))
 }
 
-func (c *NeoExCompiler) patch(pos int, arg int32) {
+func (c *NeoCompiler) patch(pos int, arg int32) {
 	c.instructions[pos].Arg = arg
 }
 
@@ -661,7 +802,7 @@ func neoIsOne(v Value) bool {
 	return false
 }
 
-func (c *NeoExCompiler) addConstant(v Value) int32 {
+func (c *NeoCompiler) addConstant(v Value) int32 {
 	var key any
 	switch v.Type {
 	case ValInt: key = int64(v.Num)
@@ -679,7 +820,7 @@ func (c *NeoExCompiler) addConstant(v Value) int32 {
 	return idx
 }
 
-func (c *NeoExCompiler) peephole() {
+func (c *NeoCompiler) peephole() {
 	if len(c.instructions) < 2 {
 		return
 	}

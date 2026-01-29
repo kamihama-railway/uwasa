@@ -75,7 +75,7 @@ func NewEngineWithOptions(input string, opts EngineOptions) (*Engine, error) {
 }
 
 func NewEngineVMNeo(input string) (*Engine, error) {
-	c := NewNeoExCompiler(input)
+	c := NewNeoCompiler(input)
 	bc, err := c.Compile()
 	if err != nil {
 		return nil, err

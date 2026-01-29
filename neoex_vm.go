@@ -7,7 +7,14 @@ import (
 	"bytes"
 	"fmt"
 	"math"
+	"sync"
 )
+
+var neoBufferPool = sync.Pool{
+	New: func() any {
+		return new(bytes.Buffer)
+	},
+}
 
 func RunNeoVM[C Context](bc *NeoBytecode, ctx C) (any, error) {
 	if bc == nil || len(bc.Instructions) == 0 {
@@ -525,10 +532,10 @@ func RunNeoVM[C Context](bc *NeoBytecode, ctx C) (any, error) {
 				}
 				argStrings[i] = s; totalLen += len(s)
 			}
-			buf := bufferPool.Get().(*bytes.Buffer)
+			buf := neoBufferPool.Get().(*bytes.Buffer)
 			buf.Reset(); buf.Grow(totalLen)
 			for _, s := range argStrings { buf.WriteString(s) }
-			res := buf.String(); bufferPool.Put(buf)
+			res := buf.String(); neoBufferPool.Put(buf)
 			sp++
 			if sp >= 64 { return nil, fmt.Errorf("NeoVM stack overflow") }
 			stack[sp] = Value{Type: ValString, Str: res}
