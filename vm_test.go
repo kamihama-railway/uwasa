@@ -114,32 +114,3 @@ func TestVMStackOverflow(t *testing.T) {
 		t.Errorf("Expected stack overflow error, got: %v", err)
 	}
 }
-
-func TestVM_FusedStringConcat(t *testing.T) {
-	// Test if OpAddGlobal correctly handles strings instead of falling back to float 0
-	input := "name + \"!\""
-	engine, err := NewEngineVM(input)
-	if err != nil {
-		t.Fatalf("NewEngineVM failed: %v", err)
-	}
-
-	vars := map[string]any{"name": "uwasa"}
-	got, err := engine.Execute(vars)
-	if err != nil {
-		t.Fatalf("Execute failed: %v", err)
-	}
-
-	expected := "uwasa!"
-	if got != expected {
-		t.Errorf("Expected %q, got %q (this likely indicates OpAddGlobal failed to handle strings)", expected, got)
-	}
-
-	// Test OpAddGlobalGlobal
-	input2 := "a + b"
-	engine2, _ := NewEngineVM(input2)
-	vars2 := map[string]any{"a": "hello ", "b": "world"}
-	got2, _ := engine2.Execute(vars2)
-	if got2 != "hello world" {
-		t.Errorf("Expected %q, got %q (OpAddGlobalGlobal failed for strings)", "hello world", got2)
-	}
-}

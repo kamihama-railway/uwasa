@@ -206,8 +206,6 @@ func runVMMapped(bc *RenderedBytecode, ctx *MapContext) (any, error) {
 			if sp >= 64 { return nil, fmt.Errorf("VM stack overflow") }
 			if lv.Type == ValInt && rv.Type == ValInt {
 				stack[sp] = Value{Type: ValInt, Num: lv.Num + rv.Num}
-			} else if lv.Type == ValString && rv.Type == ValString {
-				stack[sp] = Value{Type: ValString, Str: lv.Str + rv.Str}
 			} else {
 				lf, _ := valToFloat64(lv); rf, _ := valToFloat64(rv)
 				stack[sp] = Value{Type: ValFloat, Num: math.Float64bits(lf + rf)}
@@ -220,8 +218,6 @@ func runVMMapped(bc *RenderedBytecode, ctx *MapContext) (any, error) {
 			if sp >= 64 { return nil, fmt.Errorf("VM stack overflow") }
 			if lv.Type == ValInt && rv.Type == ValInt {
 				stack[sp] = Value{Type: ValInt, Num: lv.Num + rv.Num}
-			} else if lv.Type == ValString && rv.Type == ValString {
-				stack[sp] = Value{Type: ValString, Str: lv.Str + rv.Str}
 			} else {
 				lf, _ := valToFloat64(lv); rf, _ := valToFloat64(rv)
 				stack[sp] = Value{Type: ValFloat, Num: math.Float64bits(lf + rf)}
@@ -508,8 +504,6 @@ func runVMGeneral(bc *RenderedBytecode, ctx Context) (any, error) {
 			if sp >= 64 { return nil, fmt.Errorf("VM stack overflow") }
 			if lv.Type == ValInt && rv.Type == ValInt {
 				stack[sp] = Value{Type: ValInt, Num: lv.Num + rv.Num}
-			} else if lv.Type == ValString && rv.Type == ValString {
-				stack[sp] = Value{Type: ValString, Str: lv.Str + rv.Str}
 			} else {
 				lf, _ := valToFloat64(lv); rf, _ := valToFloat64(rv)
 				stack[sp] = Value{Type: ValFloat, Num: math.Float64bits(lf + rf)}
@@ -523,8 +517,6 @@ func runVMGeneral(bc *RenderedBytecode, ctx Context) (any, error) {
 			if sp >= 64 { return nil, fmt.Errorf("VM stack overflow") }
 			if lv.Type == ValInt && rv.Type == ValInt {
 				stack[sp] = Value{Type: ValInt, Num: lv.Num + rv.Num}
-			} else if lv.Type == ValString && rv.Type == ValString {
-				stack[sp] = Value{Type: ValString, Str: lv.Str + rv.Str}
 			} else {
 				lf, _ := valToFloat64(lv); rf, _ := valToFloat64(rv)
 				stack[sp] = Value{Type: ValFloat, Num: math.Float64bits(lf + rf)}

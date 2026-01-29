@@ -24,7 +24,6 @@ type Engine struct {
 	program          Expression
 	bytecode         *RenderedBytecode
 	registerBytecode *RegisterBytecode
-	neoBytecode      *NeoBytecode
 	constantResult   any
 	isConstant       bool
 }
@@ -72,19 +71,6 @@ func NewEngineWithOptions(input string, opts EngineOptions) (*Engine, error) {
 	}
 
 	return engine, nil
-}
-
-func NewEngineVMNeo(input string) (*Engine, error) {
-	c := NewNeoCompiler(input)
-	bc, err := c.Compile()
-	if err != nil {
-		return nil, err
-	}
-	// Constant detection
-	if len(bc.Instructions) == 2 && bc.Instructions[0].Op == NeoOpPush && bc.Instructions[1].Op == NeoOpReturn {
-		return &Engine{constantResult: bc.Constants[bc.Instructions[0].Arg].ToInterface(), isConstant: true}, nil
-	}
-	return &Engine{neoBytecode: bc}, nil
 }
 
 func NewEngineVM(input string) (*Engine, error) {
@@ -149,9 +135,6 @@ func (e *Engine) Execute(vars map[string]any) (any, error) {
 	if e.registerBytecode != nil {
 		return RunRegisterVM(e.registerBytecode, ctx)
 	}
-	if e.neoBytecode != nil {
-		return RunNeoVM(e.neoBytecode, ctx)
-	}
 	if e.bytecode != nil {
 		return RunVM(e.bytecode, ctx)
 	}
@@ -165,9 +148,6 @@ func (e *Engine) ExecuteWithContext(ctx Context) (any, error) {
 
 	if e.registerBytecode != nil {
 		return RunRegisterVM(e.registerBytecode, ctx)
-	}
-	if e.neoBytecode != nil {
-		return RunNeoVM(e.neoBytecode, ctx)
 	}
 	if e.bytecode != nil {
 		return RunVM(e.bytecode, ctx)
