@@ -166,7 +166,16 @@ func RunNeoVM[C Context](bc *NeoBytecode, ctx C) (any, error) {
 			sp++
 			if sp >= 64 { return nil, fmt.Errorf("NeoVM stack overflow") }
 			if isMapCtx {
-				stack[sp] = FromInterface(vars[name])
+				val := vars[name]
+				switch v := val.(type) {
+				case int64: stack[sp] = Value{Type: ValInt, Num: uint64(v)}
+				case float64: stack[sp] = Value{Type: ValFloat, Num: math.Float64bits(v)}
+				case string: stack[sp] = Value{Type: ValString, Str: v}
+				case bool:
+					if v { stack[sp] = Value{Type: ValBool, Num: 1} } else { stack[sp] = Value{Type: ValBool, Num: 0} }
+				case int: stack[sp] = Value{Type: ValInt, Num: uint64(v)}
+				default: stack[sp] = FromInterface(v)
+				}
 			} else {
 				val, _ := ctx.Get(name)
 				stack[sp] = FromInterface(val)
@@ -220,144 +229,197 @@ func RunNeoVM[C Context](bc *NeoBytecode, ctx C) (any, error) {
 		case NeoOpAddGlobal:
 			gIdx := inst.Arg & 0xFFFF; cIdx := inst.Arg >> 16
 			name := consts[gIdx].Str
-			var lv Value
-			if isMapCtx {
-				lv = FromInterface(vars[name])
-			} else {
-				val, _ := ctx.Get(name)
-				lv = FromInterface(val)
-			}
 			rv := consts[cIdx]
 			sp++
 			if sp >= 64 { return nil, fmt.Errorf("NeoVM stack overflow") }
-			if lv.Type == ValInt && rv.Type == ValInt {
-				stack[sp] = Value{Type: ValInt, Num: lv.Num + rv.Num}
-			} else if lv.Type == ValString && rv.Type == ValString {
-				stack[sp] = Value{Type: ValString, Str: lv.Str + rv.Str}
-			} else if lv.Type == ValFloat && rv.Type == ValFloat {
-				stack[sp] = Value{Type: ValFloat, Num: math.Float64bits(math.Float64frombits(lv.Num) + math.Float64frombits(rv.Num))}
-			} else if lv.Type == ValInt && rv.Type == ValFloat {
-				stack[sp] = Value{Type: ValFloat, Num: math.Float64bits(float64(int64(lv.Num)) + math.Float64frombits(rv.Num))}
-			} else if lv.Type == ValFloat && rv.Type == ValInt {
-				stack[sp] = Value{Type: ValFloat, Num: math.Float64bits(math.Float64frombits(lv.Num) + float64(int64(rv.Num)))}
+			if isMapCtx {
+				val := vars[name]
+				switch lv := val.(type) {
+				case int64:
+					if rv.Type == ValInt { stack[sp] = Value{Type: ValInt, Num: uint64(lv + int64(rv.Num))} } else if rv.Type == ValFloat { stack[sp] = Value{Type: ValFloat, Num: math.Float64bits(float64(lv) + math.Float64frombits(rv.Num))} } else { stack[sp] = Value{Type: ValFloat, Num: math.Float64bits(float64(lv) + 0)} } // fallback
+					continue
+				case float64:
+					if rv.Type == ValInt { stack[sp] = Value{Type: ValFloat, Num: math.Float64bits(lv + float64(int64(rv.Num)))} } else if rv.Type == ValFloat { stack[sp] = Value{Type: ValFloat, Num: math.Float64bits(lv + math.Float64frombits(rv.Num))} } else { stack[sp] = Value{Type: ValFloat, Num: math.Float64bits(lv + 0)} }
+					continue
+				case string:
+					if rv.Type == ValString { stack[sp] = Value{Type: ValString, Str: lv + rv.Str} } else { stack[sp] = FromInterface(lv) } // problematic
+					continue
+				}
+				lval := FromInterface(val)
+				if lval.Type == ValInt && rv.Type == ValInt { stack[sp] = Value{Type: ValInt, Num: lval.Num + rv.Num} } else { lf, _ := valToFloat64(lval); rf, _ := valToFloat64(rv); stack[sp] = Value{Type: ValFloat, Num: math.Float64bits(lf + rf)} }
 			} else {
-				lf, _ := valToFloat64(lv); rf, _ := valToFloat64(rv)
-				stack[sp] = Value{Type: ValFloat, Num: math.Float64bits(lf + rf)}
+				val, _ := ctx.Get(name)
+				lv := FromInterface(val)
+				if lv.Type == ValInt && rv.Type == ValInt {
+					stack[sp] = Value{Type: ValInt, Num: lv.Num + rv.Num}
+				} else if lv.Type == ValString && rv.Type == ValString {
+					stack[sp] = Value{Type: ValString, Str: lv.Str + rv.Str}
+				} else {
+					lf, _ := valToFloat64(lv); rf, _ := valToFloat64(rv)
+					stack[sp] = Value{Type: ValFloat, Num: math.Float64bits(lf + rf)}
+				}
 			}
 		case NeoOpAddConstGlobal:
 			cIdx := inst.Arg >> 16; gIdx := inst.Arg & 0xFFFF
 			name := consts[gIdx].Str
-			var rv Value
-			if isMapCtx {
-				rv = FromInterface(vars[name])
-			} else {
-				val, _ := ctx.Get(name)
-				rv = FromInterface(val)
-			}
 			lv := consts[cIdx]
 			sp++
 			if sp >= 64 { return nil, fmt.Errorf("NeoVM stack overflow") }
-			if lv.Type == ValInt && rv.Type == ValInt {
-				stack[sp] = Value{Type: ValInt, Num: lv.Num + rv.Num}
-			} else if lv.Type == ValString && rv.Type == ValString {
-				stack[sp] = Value{Type: ValString, Str: lv.Str + rv.Str}
-			} else if lv.Type == ValFloat && rv.Type == ValFloat {
-				stack[sp] = Value{Type: ValFloat, Num: math.Float64bits(math.Float64frombits(lv.Num) + math.Float64frombits(rv.Num))}
-			} else if lv.Type == ValInt && rv.Type == ValFloat {
-				stack[sp] = Value{Type: ValFloat, Num: math.Float64bits(float64(int64(lv.Num)) + math.Float64frombits(rv.Num))}
-			} else if lv.Type == ValFloat && rv.Type == ValInt {
-				stack[sp] = Value{Type: ValFloat, Num: math.Float64bits(math.Float64frombits(lv.Num) + float64(int64(rv.Num)))}
+			if isMapCtx {
+				val := vars[name]
+				switch rv := val.(type) {
+				case int64:
+					if lv.Type == ValInt { stack[sp] = Value{Type: ValInt, Num: uint64(int64(lv.Num) + rv)} } else if lv.Type == ValFloat { stack[sp] = Value{Type: ValFloat, Num: math.Float64bits(math.Float64frombits(lv.Num) + float64(rv))} } else { stack[sp] = Value{Type: ValFloat, Num: math.Float64bits(0 + float64(rv))} }
+					continue
+				case float64:
+					if lv.Type == ValInt { stack[sp] = Value{Type: ValFloat, Num: math.Float64bits(float64(int64(lv.Num)) + rv)} } else if lv.Type == ValFloat { stack[sp] = Value{Type: ValFloat, Num: math.Float64bits(math.Float64frombits(lv.Num) + rv)} } else { stack[sp] = Value{Type: ValFloat, Num: math.Float64bits(0 + rv)} }
+					continue
+				case string:
+					if lv.Type == ValString { stack[sp] = Value{Type: ValString, Str: lv.Str + rv} } else { stack[sp] = FromInterface(rv) }
+					continue
+				}
+				rval := FromInterface(val)
+				if lv.Type == ValInt && rval.Type == ValInt { stack[sp] = Value{Type: ValInt, Num: lv.Num + rval.Num} } else { lf, _ := valToFloat64(lv); rf, _ := valToFloat64(rval); stack[sp] = Value{Type: ValFloat, Num: math.Float64bits(lf + rf)} }
 			} else {
-				lf, _ := valToFloat64(lv); rf, _ := valToFloat64(rv)
-				stack[sp] = Value{Type: ValFloat, Num: math.Float64bits(lf + rf)}
+				val, _ := ctx.Get(name)
+				rv := FromInterface(val)
+				if lv.Type == ValInt && rv.Type == ValInt {
+					stack[sp] = Value{Type: ValInt, Num: lv.Num + rv.Num}
+				} else if lv.Type == ValString && rv.Type == ValString {
+					stack[sp] = Value{Type: ValString, Str: lv.Str + rv.Str}
+				} else {
+					lf, _ := valToFloat64(lv); rf, _ := valToFloat64(rv)
+					stack[sp] = Value{Type: ValFloat, Num: math.Float64bits(lf + rf)}
+				}
 			}
 		case NeoOpAddGlobalGlobal:
 			g1Idx := inst.Arg >> 16; g2Idx := inst.Arg & 0xFFFF
-			var lv, rv Value
+			sp++
+			if sp >= 64 { return nil, fmt.Errorf("NeoVM stack overflow") }
 			if isMapCtx {
-				lv = FromInterface(vars[consts[g1Idx].Str])
-				rv = FromInterface(vars[consts[g2Idx].Str])
+				v1 := vars[consts[g1Idx].Str]
+				v2 := vars[consts[g2Idx].Str]
+
+				done := false
+				switch lv := v1.(type) {
+				case int64:
+					switch rv := v2.(type) {
+					case int64: stack[sp] = Value{Type: ValInt, Num: uint64(lv + rv)}; done = true
+					case float64: stack[sp] = Value{Type: ValFloat, Num: math.Float64bits(float64(lv) + rv)}; done = true
+					}
+				case float64:
+					switch rv := v2.(type) {
+					case int64: stack[sp] = Value{Type: ValFloat, Num: math.Float64bits(lv + float64(rv))}; done = true
+					case float64: stack[sp] = Value{Type: ValFloat, Num: math.Float64bits(lv + rv)}; done = true
+					}
+				case string:
+					if rv, ok := v2.(string); ok { stack[sp] = Value{Type: ValString, Str: lv + rv}; done = true }
+				}
+				if done { continue }
+
+				lv := FromInterface(v1)
+				rv := FromInterface(v2)
+				if lv.Type == ValInt && rv.Type == ValInt { stack[sp] = Value{Type: ValInt, Num: lv.Num + rv.Num} } else if lv.Type == ValString && rv.Type == ValString { stack[sp] = Value{Type: ValString, Str: lv.Str + rv.Str} } else { lf, _ := valToFloat64(lv); rf, _ := valToFloat64(rv); stack[sp] = Value{Type: ValFloat, Num: math.Float64bits(lf + rf)} }
 			} else {
 				v1, _ := ctx.Get(consts[g1Idx].Str)
 				v2, _ := ctx.Get(consts[g2Idx].Str)
-				lv = FromInterface(v1); rv = FromInterface(v2)
-			}
-			sp++
-			if sp >= 64 { return nil, fmt.Errorf("NeoVM stack overflow") }
-			if lv.Type == ValInt && rv.Type == ValInt {
-				stack[sp] = Value{Type: ValInt, Num: lv.Num + rv.Num}
-			} else if lv.Type == ValString && rv.Type == ValString {
-				stack[sp] = Value{Type: ValString, Str: lv.Str + rv.Str}
-			} else if lv.Type == ValFloat && rv.Type == ValFloat {
-				stack[sp] = Value{Type: ValFloat, Num: math.Float64bits(math.Float64frombits(lv.Num) + math.Float64frombits(rv.Num))}
-			} else if lv.Type == ValInt && rv.Type == ValFloat {
-				stack[sp] = Value{Type: ValFloat, Num: math.Float64bits(float64(int64(lv.Num)) + math.Float64frombits(rv.Num))}
-			} else if lv.Type == ValFloat && rv.Type == ValInt {
-				stack[sp] = Value{Type: ValFloat, Num: math.Float64bits(math.Float64frombits(lv.Num) + float64(int64(rv.Num)))}
-			} else {
-				lf, _ := valToFloat64(lv); rf, _ := valToFloat64(rv)
-				stack[sp] = Value{Type: ValFloat, Num: math.Float64bits(lf + rf)}
+				lv := FromInterface(v1); rv := FromInterface(v2)
+				if lv.Type == ValInt && rv.Type == ValInt {
+					stack[sp] = Value{Type: ValInt, Num: lv.Num + rv.Num}
+				} else if lv.Type == ValString && rv.Type == ValString {
+					stack[sp] = Value{Type: ValString, Str: lv.Str + rv.Str}
+				} else {
+					lf, _ := valToFloat64(lv); rf, _ := valToFloat64(rv)
+					stack[sp] = Value{Type: ValFloat, Num: math.Float64bits(lf + rf)}
+				}
 			}
 		case NeoOpEqualGlobalConst:
 			gIdx := inst.Arg >> 16; cIdx := inst.Arg & 0xFFFF
-			var lv Value
-			if isMapCtx {
-				lv = FromInterface(vars[consts[gIdx].Str])
-			} else {
-				val, _ := ctx.Get(consts[gIdx].Str)
-				lv = FromInterface(val)
-			}
 			r := consts[cIdx]
 			res := false
-			if lv.Type == r.Type {
-				switch lv.Type {
-				case ValInt, ValFloat, ValBool: res = lv.Num == r.Num
-				case ValString: res = lv.Str == r.Str
-				case ValNil: res = true
+			if isMapCtx {
+				val := vars[consts[gIdx].Str]
+				switch lv := val.(type) {
+				case int64:
+					if r.Type == ValInt { res = lv == int64(r.Num) } else if r.Type == ValFloat { res = float64(lv) == math.Float64frombits(r.Num) }
+				case float64:
+					if r.Type == ValInt { res = lv == float64(int64(r.Num)) } else if r.Type == ValFloat { res = lv == math.Float64frombits(r.Num) }
+				case string:
+					if r.Type == ValString { res = lv == r.Str }
+				case bool:
+					if r.Type == ValBool { res = (lv && r.Num != 0) || (!lv && r.Num == 0) }
+				default:
+					lval := FromInterface(val)
+					if lval.Type == r.Type {
+						switch lval.Type {
+						case ValInt, ValFloat, ValBool: res = lval.Num == r.Num
+						case ValString: res = lval.Str == r.Str
+						case ValNil: res = true
+						}
+					} else {
+						lf, okL := valToFloat64(lval); rf, okR := valToFloat64(r)
+						if okL && okR { res = lf == rf }
+					}
 				}
 			} else {
-				lf, okL := valToFloat64(lv); rf, okR := valToFloat64(r)
-				if okL && okR { res = lf == rf }
+				val, _ := ctx.Get(consts[gIdx].Str)
+				lv := FromInterface(val)
+				if lv.Type == r.Type {
+					switch lv.Type {
+					case ValInt, ValFloat, ValBool: res = lv.Num == r.Num
+					case ValString: res = lv.Str == r.Str
+					case ValNil: res = true
+					}
+				} else {
+					lf, okL := valToFloat64(lv); rf, okR := valToFloat64(r)
+					if okL && okR { res = lf == rf }
+				}
 			}
 			sp++
 			if sp >= 64 { return nil, fmt.Errorf("NeoVM stack overflow") }
 			stack[sp] = Value{Type: ValBool, Num: boolToUint64(res)}
 		case NeoOpGreaterGlobalConst:
 			gIdx := inst.Arg >> 16; cIdx := inst.Arg & 0xFFFF
-			var lv Value
-			if isMapCtx {
-				lv = FromInterface(vars[consts[gIdx].Str])
-			} else {
-				val, _ := ctx.Get(consts[gIdx].Str)
-				lv = FromInterface(val)
-			}
 			r := consts[cIdx]
 			res := false
-			if lv.Type == ValInt && r.Type == ValInt {
-				res = int64(lv.Num) > int64(r.Num)
+			if isMapCtx {
+				val := vars[consts[gIdx].Str]
+				switch lv := val.(type) {
+				case int64:
+					if r.Type == ValInt { res = lv > int64(r.Num) } else if r.Type == ValFloat { res = float64(lv) > math.Float64frombits(r.Num) }
+				case float64:
+					if r.Type == ValInt { res = lv > float64(int64(r.Num)) } else if r.Type == ValFloat { res = lv > math.Float64frombits(r.Num) }
+				default:
+					lval := FromInterface(val)
+					if lval.Type == ValInt && r.Type == ValInt { res = int64(lval.Num) > int64(r.Num) } else { lf, _ := valToFloat64(lval); rf, _ := valToFloat64(r); res = lf > rf }
+				}
 			} else {
-				lf, _ := valToFloat64(lv); rf, _ := valToFloat64(r)
-				res = lf > rf
+				val, _ := ctx.Get(consts[gIdx].Str)
+				lv := FromInterface(val)
+				if lv.Type == ValInt && r.Type == ValInt { res = int64(lv.Num) > int64(r.Num) } else { lf, _ := valToFloat64(lv); rf, _ := valToFloat64(r); res = lf > rf }
 			}
 			sp++
 			if sp >= 64 { return nil, fmt.Errorf("NeoVM stack overflow") }
 			stack[sp] = Value{Type: ValBool, Num: boolToUint64(res)}
 		case NeoOpLessGlobalConst:
 			gIdx := inst.Arg >> 16; cIdx := inst.Arg & 0xFFFF
-			var lv Value
-			if isMapCtx {
-				lv = FromInterface(vars[consts[gIdx].Str])
-			} else {
-				val, _ := ctx.Get(consts[gIdx].Str)
-				lv = FromInterface(val)
-			}
 			r := consts[cIdx]
 			res := false
-			if lv.Type == ValInt && r.Type == ValInt {
-				res = int64(lv.Num) < int64(r.Num)
+			if isMapCtx {
+				val := vars[consts[gIdx].Str]
+				switch lv := val.(type) {
+				case int64:
+					if r.Type == ValInt { res = lv < int64(r.Num) } else if r.Type == ValFloat { res = float64(lv) < math.Float64frombits(r.Num) }
+				case float64:
+					if r.Type == ValInt { res = lv < float64(int64(r.Num)) } else if r.Type == ValFloat { res = lv < math.Float64frombits(r.Num) }
+				default:
+					lval := FromInterface(val)
+					if lval.Type == ValInt && r.Type == ValInt { res = int64(lval.Num) < int64(r.Num) } else { lf, _ := valToFloat64(lval); rf, _ := valToFloat64(r); res = lf < rf }
+				}
 			} else {
-				lf, _ := valToFloat64(lv); rf, _ := valToFloat64(r)
-				res = lf < rf
+				val, _ := ctx.Get(consts[gIdx].Str)
+				lv := FromInterface(val)
+				if lv.Type == ValInt && r.Type == ValInt { res = int64(lv.Num) < int64(r.Num) } else { lf, _ := valToFloat64(lv); rf, _ := valToFloat64(r); res = lf < rf }
 			}
 			sp++
 			if sp >= 64 { return nil, fmt.Errorf("NeoVM stack overflow") }
@@ -366,48 +428,87 @@ func RunNeoVM[C Context](bc *NeoBytecode, ctx C) (any, error) {
 			gIdx := int(inst.Arg >> 22) & 0x3FF
 			cIdx := int(inst.Arg >> 12) & 0x3FF
 			jTarget := int(inst.Arg) & 0xFFF
-			var lv Value
-			if isMapCtx {
-				lv = FromInterface(vars[consts[gIdx].Str])
-			} else {
-				val, _ := ctx.Get(consts[gIdx].Str)
-				lv = FromInterface(val)
-			}
 			r := consts[cIdx]
 			res := false
-			if lv.Type == r.Type {
-				switch lv.Type {
-				case ValInt, ValFloat, ValBool: res = lv.Num == r.Num
-				case ValString: res = lv.Str == r.Str
-				case ValNil: res = true
+			if isMapCtx {
+				val := vars[consts[gIdx].Str]
+				switch lv := val.(type) {
+				case int64:
+					if r.Type == ValInt { res = lv == int64(r.Num) } else if r.Type == ValFloat { res = float64(lv) == math.Float64frombits(r.Num) }
+				case float64:
+					if r.Type == ValInt { res = lv == float64(int64(r.Num)) } else if r.Type == ValFloat { res = lv == math.Float64frombits(r.Num) }
+				case string:
+					if r.Type == ValString { res = lv == r.Str }
+				case bool:
+					if r.Type == ValBool { res = (lv && r.Num != 0) || (!lv && r.Num == 0) }
+				default:
+					lval := FromInterface(val)
+					if lval.Type == r.Type {
+						switch lval.Type {
+						case ValInt, ValFloat, ValBool: res = lval.Num == r.Num
+						case ValString: res = lval.Str == r.Str
+						case ValNil: res = true
+						}
+					} else {
+						lf, okL := valToFloat64(lval); rf, okR := valToFloat64(r)
+						if okL && okR { res = lf == rf }
+					}
 				}
 			} else {
-				lf, okL := valToFloat64(lv); rf, okR := valToFloat64(r)
-				if okL && okR { res = lf == rf }
+				val, _ := ctx.Get(consts[gIdx].Str)
+				lv := FromInterface(val)
+				if lv.Type == r.Type {
+					switch lv.Type {
+					case ValInt, ValFloat, ValBool: res = lv.Num == r.Num
+					case ValString: res = lv.Str == r.Str
+					case ValNil: res = true
+					}
+				} else {
+					lf, okL := valToFloat64(lv); rf, okR := valToFloat64(r)
+					if okL && okR { res = lf == rf }
+				}
 			}
 			if !res { pc = jTarget }
 		case NeoOpGetGlobalJumpIfFalse:
 			gIdx := inst.Arg >> 16; jTarget := inst.Arg & 0xFFFF
-			var lv Value
+			var truth bool
 			if isMapCtx {
-				lv = FromInterface(vars[consts[gIdx].Str])
+				val := vars[consts[gIdx].Str]
+				switch v := val.(type) {
+				case bool: truth = v
+				case nil: truth = false
+				default: truth = true
+				}
 			} else {
 				val, _ := ctx.Get(consts[gIdx].Str)
-				lv = FromInterface(val)
+				truth = isValTruthy(FromInterface(val))
 			}
-			if !isValTruthy(lv) { pc = int(jTarget) }
+			if !truth { pc = int(jTarget) }
 		case NeoOpGetGlobalJumpIfTrue:
 			gIdx := inst.Arg >> 16; jTarget := inst.Arg & 0xFFFF
-			var lv Value
+			var truth bool
 			if isMapCtx {
-				lv = FromInterface(vars[consts[gIdx].Str])
+				val := vars[consts[gIdx].Str]
+				switch v := val.(type) {
+				case bool: truth = v
+				case nil: truth = false
+				default: truth = true
+				}
 			} else {
 				val, _ := ctx.Get(consts[gIdx].Str)
-				lv = FromInterface(val)
+				truth = isValTruthy(FromInterface(val))
 			}
-			if isValTruthy(lv) { pc = int(jTarget) }
+			if truth { pc = int(jTarget) }
 		case NeoOpConcat:
 			numArgs := int(inst.Arg)
+			if numArgs == 2 {
+				r := stack[sp]; sp--; l := stack[sp]
+				var s1, s2 string
+				if l.Type == ValString { s1 = l.Str } else { s1 = fmt.Sprintf("%v", l.ToInterface()) }
+				if r.Type == ValString { s2 = r.Str } else { s2 = fmt.Sprintf("%v", r.ToInterface()) }
+				stack[sp] = Value{Type: ValString, Str: s1 + s2}
+				continue
+			}
 			totalLen := 0
 			var argStringsBuf [8]string
 			var argStrings []string

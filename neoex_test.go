@@ -13,6 +13,7 @@ func TestNeoExVM(t *testing.T) {
 		vars     map[string]any
 		expected any
 	}{
+		{`if a == 0 is "yes" else if a == 1 is "ok" else is "bad"`, map[string]any{"a": int64(1)}, "ok"},
 		{"1 + 2 * 3", nil, int64(7)},
 		{"(1 + 2) * 3", nil, int64(9)},
 		{"a + b", map[string]any{"a": int64(10), "b": int64(20)}, int64(30)},
@@ -83,5 +84,35 @@ func TestNeoExVMStackOverflow(t *testing.T) {
 	_, err = engine.Execute(map[string]any{"a": 1})
 	if err == nil || err.Error() != "NeoVM stack overflow" {
 		t.Errorf("Expected stack overflow error, got: %v", err)
+	}
+}
+
+func TestNeoExVM_StringFusion(t *testing.T) {
+	input := `"a" + "b" + c + d + "e"`
+	c := NewNeoExCompiler(input)
+	bc, err := c.Compile()
+	if err != nil {
+		t.Fatalf("Compile error: %v", err)
+	}
+
+	// Should be: Push("ab"), GetG(c), GetG(d), Push("e"), Concat(4)
+	// "a"+"b" folded to "ab"
+	// Then "ab" + c -> Concat("ab", c)
+	// Then Concat("ab", c) + d -> Concat("ab", c, d)
+	// Then Concat("ab", c, d) + "e" -> Concat("ab", c, d, "e")
+
+	foundConcat := false
+	var nArgs int32
+	for _, inst := range bc.Instructions {
+		if inst.Op == NeoOpConcat {
+			foundConcat = true
+			nArgs = inst.Arg
+		}
+	}
+	if !foundConcat {
+		t.Errorf("String fusion failed: NeoOpConcat not found")
+	}
+	if nArgs != 4 {
+		t.Errorf("String fusion failed: expected Concat with 4 args, got %d", nArgs)
 	}
 }

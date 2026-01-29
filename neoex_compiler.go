@@ -10,8 +10,9 @@ import (
 )
 
 type compilationValue struct {
-	isConst bool
-	val     Value
+	isConst  bool
+	val      Value
+	isString bool
 }
 
 type NeoExCompiler struct {
@@ -23,7 +24,8 @@ type NeoExCompiler struct {
 	constants    []Value
 	constMap     map[any]int32
 
-	errors []string
+	discard bool // New: discard emitted instructions
+	errors  []string
 }
 
 func NewNeoExCompiler(input string) *NeoExCompiler {
@@ -156,7 +158,7 @@ func (c *NeoExCompiler) parseNumberLiteral() (compilationValue, error) {
 }
 
 func (c *NeoExCompiler) parseStringLiteral() (compilationValue, error) {
-	return compilationValue{isConst: true, val: Value{Type: ValString, Str: c.curToken.Literal}}, nil
+	return compilationValue{isConst: true, val: Value{Type: ValString, Str: c.curToken.Literal}, isString: true}, nil
 }
 
 func (c *NeoExCompiler) parseBooleanLiteral() (compilationValue, error) {
@@ -211,6 +213,40 @@ func (c *NeoExCompiler) parseGroupedExpression() (compilationValue, error) {
 func (c *NeoExCompiler) parseInfixExpression(left compilationValue) (compilationValue, error) {
 	op := c.curToken.Literal
 	precedence := c.curPrecedence()
+
+	if op == "+" && left.isString {
+		// Optimization: String concatenation fusion
+		lastIdx := len(c.instructions) - 1
+		canFuse := lastIdx >= 0 && c.instructions[lastIdx].Op == NeoOpConcat
+
+		var nArgs int32
+		if canFuse {
+			nArgs = c.instructions[lastIdx].Arg
+			c.instructions = c.instructions[:lastIdx]
+		}
+
+		c.nextToken()
+		right, err := c.parseExpression(precedence)
+		if err != nil { return compilationValue{}, err }
+
+		if left.isConst && right.isConst {
+			res, ok := c.foldInfix(left.val, right.val, op)
+			if ok {
+				// Re-patching if we removed Concat? No, if left was const, lastIdx wouldn't be Concat.
+				return compilationValue{isConst: true, val: res, isString: true}, nil
+			}
+		}
+
+		if right.isConst { c.emitPush(right.val) }
+
+		if canFuse {
+			c.emit(NeoOpConcat, nArgs+1)
+		} else {
+			if left.isConst { c.emitPush(left.val) }
+			c.emit(NeoOpConcat, 2)
+		}
+		return compilationValue{isConst: false, isString: true}, nil
+	}
 
 	if op == "&&" {
 		// Only fold if left is false, but we can't easily skip right side tokens without emitting
@@ -286,6 +322,13 @@ func (c *NeoExCompiler) parseInfixExpression(left compilationValue) (compilation
 		}
 	}
 
+	if (left.isString || right.isString) && op == "+" {
+		if left.isConst { c.emitPush(left.val) }
+		if right.isConst { c.emitPush(right.val) }
+		c.emit(NeoOpConcat, 2)
+		return compilationValue{isConst: false, isString: true}, nil
+	}
+
 	// Algebraic Simplifications
 	if op == "+" {
 		if left.isConst && neoIsZero(left.val) { return right, nil }
@@ -310,10 +353,34 @@ func (c *NeoExCompiler) parseInfixExpression(left compilationValue) (compilation
 
 	switch op {
 	case "+":
-		// Try to optimize string concatenation sequence
-		// If we are at the top level of a '+' sequence, we could collect them.
-		// But in a recursive descent, it's easier to do it bottom-up or just let peephole handle it?
-		// Peephole is better.
+		if left.isString || right.isString {
+			// Check if we can fuse into an existing Concat
+			lastIdx := len(c.instructions) - 1
+			if lastIdx >= 0 && c.instructions[lastIdx].Op == NeoOpConcat {
+				// We need to move the new operand BEFORE the Concat instruction?
+				// No, the operands are already on stack.
+				// Wait, Pratt parsing: [left-expr] [right-expr]
+				// If left was Concat(N), it means stack has N elements, and then we pushed Concat(N).
+				// That's not right. Concat(N) consumes N elements and pushes 1.
+
+				// If we want to fuse:
+				// [A, B, Concat(2)] + C
+				// We want [A, B, C, Concat(3)]
+
+				// So we remove Concat(2), and emit C, then emit Concat(3).
+				nArgs := c.instructions[lastIdx].Arg
+				c.instructions = c.instructions[:lastIdx] // remove Concat(2)
+				if right.isConst { c.emitPush(right.val) }
+				c.emit(NeoOpConcat, nArgs+1)
+				return compilationValue{isConst: false, isString: true}, nil
+			}
+
+			// Not already Concat, create new one
+			if left.isConst { c.emitPush(left.val) }
+			if right.isConst { c.emitPush(right.val) }
+			c.emit(NeoOpConcat, 2)
+			return compilationValue{isConst: false, isString: true}, nil
+		}
 		c.emit(NeoOpAdd, 0)
 	case "-": c.emit(NeoOpSub, 0)
 	case "*": c.emit(NeoOpMul, 0)
@@ -435,19 +502,22 @@ func (c *NeoExCompiler) parseCallExpression(left compilationValue) (compilationV
 }
 
 func (c *NeoExCompiler) parseIfExpression() (compilationValue, error) {
-	c.nextToken()
+	c.nextToken() // skip if
 	cond, err := c.parseExpression(LOWEST)
 	if err != nil { return compilationValue{}, err }
 
 	if c.peekToken.Type == TokenThen {
-		c.nextToken()
-		c.nextToken()
+		c.nextToken() // move to then
+		c.nextToken() // skip then
 
 		if cond.isConst {
 			if isValTruthy(cond.val) {
 				return c.parseExpression(LOWEST)
 			} else {
+				oldDiscard := c.discard
+				c.discard = true
 				_, err = c.parseExpression(LOWEST)
+				c.discard = oldDiscard
 				return compilationValue{isConst: true, val: Value{Type: ValNil}}, err
 			}
 		}
@@ -463,47 +533,31 @@ func (c *NeoExCompiler) parseIfExpression() (compilationValue, error) {
 
 	if c.peekToken.Type == TokenIs {
 		var jumpEndTargets []int
-		first := true
 
 		for {
-			if !first {
-				if c.curToken.Type == TokenIf {
-					c.nextToken()
-					cond, err = c.parseExpression(LOWEST)
-					if err != nil { return compilationValue{}, err }
-				} else if c.curToken.Type == TokenIs {
-					cond = compilationValue{isConst: true, val: Value{Type: ValBool, Num: 1}}
-				}
-			}
-			first = false
+			// Current c.curToken is the condition (or start of it)
+			// But for the first iteration, cond is already parsed.
 
 			if c.peekToken.Type != TokenIs {
-				return compilationValue{}, fmt.Errorf("expected is after if condition")
+				return compilationValue{}, fmt.Errorf("expected is after if condition, got %s", c.peekToken.Type)
 			}
-			c.nextToken()
-			c.nextToken()
+			c.nextToken() // move to is
+			c.nextToken() // skip is
 
 			var jumpFalse int
+			var tookBranch bool
 			if cond.isConst {
-				if !isValTruthy(cond.val) {
-					_, err = c.parseExpression(LOWEST)
+				if isValTruthy(cond.val) {
+					cons, err := c.parseExpression(LOWEST)
 					if err != nil { return compilationValue{}, err }
-					goto handleElse
+					if cons.isConst { c.emitPush(cons.val) }
+					tookBranch = true
+				} else {
+					oldDiscard := c.discard
+					c.discard = true
+					c.parseExpression(LOWEST)
+					c.discard = oldDiscard
 				}
-				cons, err := c.parseExpression(LOWEST)
-				if err != nil { return compilationValue{}, err }
-				if cons.isConst { c.emitPush(cons.val) }
-
-				for c.peekToken.Type == TokenElse {
-					c.nextToken()
-					if c.peekToken.Type == TokenIf {
-						c.nextToken(); c.nextToken(); c.parseExpression(LOWEST)
-						c.nextToken(); c.nextToken(); c.parseExpression(LOWEST)
-					} else if c.peekToken.Type == TokenIs {
-						c.nextToken(); c.nextToken(); c.parseExpression(LOWEST)
-					}
-				}
-				break
 			} else {
 				jumpFalse = c.emit(NeoOpJumpIfFalse, 0)
 				cons, err := c.parseExpression(LOWEST)
@@ -513,29 +567,59 @@ func (c *NeoExCompiler) parseIfExpression() (compilationValue, error) {
 				c.patch(jumpFalse, int32(len(c.instructions)))
 			}
 
-		handleElse:
+			if tookBranch {
+				// Skip all remaining branches
+				for c.peekToken.Type == TokenElse {
+					c.nextToken() // else
+					if c.peekToken.Type == TokenIf {
+						c.nextToken() // if
+						c.nextToken() // start of condition
+						oldDiscard := c.discard
+						c.discard = true
+						c.parseExpression(LOWEST) // cond
+						if c.peekToken.Type == TokenIs {
+							c.nextToken()             // is
+							c.nextToken()             // start of consequence
+							c.parseExpression(LOWEST) // cons
+						}
+						c.discard = oldDiscard
+					} else if c.peekToken.Type == TokenIs {
+						c.nextToken() // is
+						c.nextToken() // skip is
+						oldDiscard := c.discard
+						c.discard = true
+						c.parseExpression(LOWEST) // alt
+						c.discard = oldDiscard
+						break
+					}
+				}
+				break
+			}
+
 			if c.peekToken.Type != TokenElse {
 				c.emitPush(Value{Type: ValNil})
 				break
 			}
-			c.nextToken()
+			c.nextToken() // consume else
 
 			if c.peekToken.Type == TokenIf {
-				c.nextToken()
-				c.nextToken()
+				c.nextToken() // cur is if
+				c.nextToken() // cur is start of condition
+				cond, err = c.parseExpression(LOWEST)
+				if err != nil { return compilationValue{}, err }
 				continue
 			}
 
 			if c.peekToken.Type == TokenIs {
-				c.nextToken()
-				c.nextToken()
+				c.nextToken() // consume is
+				c.nextToken() // skip is
 				alt, err := c.parseExpression(LOWEST)
 				if err != nil { return compilationValue{}, err }
 				if alt.isConst { c.emitPush(alt.val) }
 				break
 			}
 
-			return compilationValue{}, fmt.Errorf("expected if or is after else")
+			return compilationValue{}, fmt.Errorf("expected if or is after else, got %s", c.peekToken.Type)
 		}
 
 		for _, target := range jumpEndTargets {
@@ -544,10 +628,11 @@ func (c *NeoExCompiler) parseIfExpression() (compilationValue, error) {
 		return compilationValue{isConst: false}, nil
 	}
 
-	return compilationValue{}, fmt.Errorf("expected then or is after if condition")
+	return compilationValue{}, fmt.Errorf("expected then or is after if condition, got %s", c.peekToken.Type)
 }
 
 func (c *NeoExCompiler) emit(op NeoOpCode, arg int32) int {
+	if c.discard { return -1 }
 	c.instructions = append(c.instructions, neoInstruction{Op: op, Arg: arg})
 	return len(c.instructions) - 1
 }
@@ -736,24 +821,20 @@ func (c *NeoExCompiler) peephole() {
 	}
 
 	// Second pass for Add -> Concat fusion
-	if len(newInsts) >= 3 {
+	if len(newInsts) >= 2 {
 		finalInsts := make([]neoInstruction, 0, len(newInsts))
 		for i := 0; i < len(newInsts); i++ {
-			// Pattern: [val1, val2, Add, val3, Add] -> [val1, val2, val3, Concat(3)]
-			// Actually, let's look for sequences of [Add, val, Add, val, ...]
-			// This is hard because of the postfix nature.
-
-			// Simple case: fuse two consecutive additions
-			// [..., val1, val2, Add, val3, Add]
-			if i >= 4 && newInsts[i].Op == NeoOpAdd && newInsts[i-2].Op == NeoOpAdd {
-				// We have something like [..., Add, val3, Add]
-				// This means (stack_top_result) + val3
-				// If we have [val1, val2, Add, val3, Add], we want [val1, val2, val3, Concat(3)]
-
-				// To do this properly, we need to know how many things are being added.
-				// This is basically tree-to-list conversion.
+			inst := newInsts[i]
+			if inst.Op == NeoOpAdd && len(finalInsts) > 0 {
+				lastIdx := len(finalInsts) - 1
+				if finalInsts[lastIdx].Op == NeoOpConcat {
+					finalInsts[lastIdx].Arg++
+					continue
+				}
+				// Also pattern: [PushString, any, Add] or [any, PushString, Add]
+				// But we don't easily know if 'any' is a string.
 			}
-			finalInsts = append(finalInsts, newInsts[i])
+			finalInsts = append(finalInsts, inst)
 		}
 		newInsts = finalInsts
 	}
