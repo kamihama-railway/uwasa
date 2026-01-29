@@ -1,24 +1,19 @@
-# Range & Implementation Scope
+# 范围与越界安全日志 (Range & Bounds Safety Log)
 
-## 1. Go Version Targeting
-The engine and its experimental NeoEx pathway target **Go 1.24+** (compatible with Go 1.25).
+本文档用于记录与边界检查、内存越界、栈溢出及数值范围相关的安全增强和修复。
 
-## 2. Modern Syntax Adoption
-To improve performance and code readability, we adopt the following modern Go patterns:
+| ID | 日期 | 类型 | 描述 | 状态 |
+|:---|:---|:---|:---|:---|
+| RNG-001 | 2026-03-XX | 栈溢出保护 | **VM 栈指针越界保护**：在标准 VM 和 NeoVM 中，操作数栈大小固定为 64。在所有入栈操作（Push, GetGlobal 等）前增加了对 `sp` 的边界检查，防止深度嵌套表达式导致内存破坏。 | 已优化 |
+| | | | | |
 
-### for range N
-Instead of legacy `for i := 0; i < N; i++`, we use:
-```go
-for i := range nInsts {
-    // ...
-}
-```
-*Note: While implemented in the VM's main loop for clarity, we occasionally use explicit pointer/index arithmetic in hot paths if it aids the compiler in eliding bounds checks.*
+---
 
-### Generic Context Dispatch
-NeoEx VM (`neoex_vm.go`) uses Go Generics to allow specialized dispatch for `MapContext`. This allows the compiler to inline or generate specialized code that avoids interface method calls (`Get`/`Set`) when the context type is known at the call site.
+## 详细说明
 
-## 3. NeoEx Optimization Scope
-- **One-Pass Compilation**: Pratt compiler bypasses AST to reduce startup latency.
-- **Instruction Fusion**: Fuses up to 4 instructions (e.g., GetGlobal + Const + Compare + Jump) into a single 32-bit packed opcode.
-- **Buffer Pooling**: Centralized `sync.Pool` for `bytes.Buffer` to minimize GC pressure during string-heavy rule execution.
+### RNG-001: VM 栈指针越界保护
+- **背景**：为了追求极致性能，VM 采用了固定大小的栈（数组）。如果 DSL 表达式嵌套过深（如连续 70 个加法），会导致 `sp` 增加到数组长度之外。
+- **实施**：
+  - 在 `vm.go` 和 `neoex_vm.go` 中，入栈操作均包含 `if sp >= 64 { return nil, fmt.Errorf("... stack overflow") }`。
+  - 这种检查能确保引擎在处理恶意构造的超长表达式时安全崩溃（抛出 Error）而非导致整个进程段错误。
+- **验证**：已增加 `TestVMStackOverflow` 和 `TestNeoExVMStackOverflow` 测试用例。
