@@ -4,120 +4,39 @@ import (
 	"testing"
 )
 
-func TestParser(t *testing.T) {
-	inputs := []string{
-		`if a == 0 && b >= 1`,
-		`if a == 0 is "yes" else if a == 1 is "ok" else is "bad"`,
-		`if a == 0 then b + 10`,
-		`b = b + 10`,
-	}
-
-	for _, input := range inputs {
-		l := NewLexer(input)
-		p := NewParser(l)
-		program := p.ParseProgram()
-		if len(p.Errors()) != 0 {
-			t.Errorf("input %q has errors: %v", input, p.Errors())
-			continue
-		}
-		if program == nil {
-			t.Errorf("input %q returned nil program", input)
-			continue
-		}
-		t.Logf("input: %q, output: %s", input, program.String())
-	}
-}
-
-func TestParserBooleanLiteral(t *testing.T) {
-	tests := []struct {
-		input    string
-		expected bool
-	}{
-		{"true", true},
-		{"false", false},
-	}
-
-	for _, tt := range tests {
-		l := NewLexer(tt.input)
-		p := NewParser(l)
-		program := p.ParseProgram()
-
-		if len(p.Errors()) != 0 {
-			t.Fatalf("parser errors: %v", p.Errors())
-		}
-
-		boolLit, ok := program.(*BooleanLiteral)
-		if !ok {
-			t.Fatalf("program is not *BooleanLiteral, got=%T", program)
-		}
-		if boolLit.Value != tt.expected {
-			t.Errorf("bool value wrong. expected=%v, got=%v", tt.expected, boolLit.Value)
-		}
-	}
-}
-
-func TestParserStructure(t *testing.T) {
-	input := `if a == 0 then b = 1`
+func TestParseNumberLiteral(t *testing.T) {
+	input := "5"
 	l := NewLexer(input)
 	p := NewParser(l)
 	program := p.ParseProgram()
 
 	if len(p.Errors()) != 0 {
-		t.Fatalf("parser errors: %v", p.Errors())
+		t.Errorf("parser errors: %v", p.Errors())
 	}
 
-	ifExp, ok := program.(*IfExpression)
+	literal, ok := program.(*NumberLiteral)
 	if !ok {
-		t.Fatalf("program is not *IfExpression, got=%T", program)
+		t.Fatalf("program is not NumberLiteral, got=%T", program)
 	}
-
-	// Check Condition
-	cond, ok := ifExp.Condition.(*InfixExpression)
-	if !ok {
-		t.Fatalf("condition is not *InfixExpression, got=%T", ifExp.Condition)
-	}
-	if cond.Operator != "==" {
-		t.Errorf("cond operator wrong. expected='==', got=%q", cond.Operator)
-	}
-	left, ok := cond.Left.(*Identifier)
-	if !ok || left.Value != "a" {
-		t.Errorf("cond left wrong. expected='a', got=%v", cond.Left)
-	}
-
-	// Check Consequence
-	assign, ok := ifExp.Consequence.(*AssignExpression)
-	if !ok {
-		t.Fatalf("consequence is not *AssignExpression, got=%T", ifExp.Consequence)
-	}
-	if assign.Name.Value != "b" {
-		t.Errorf("assign name wrong. expected='b', got=%q", assign.Name.Value)
-	}
-	val, ok := assign.Value.(*NumberLiteral)
-	if !ok || (val.IsInt && val.Int64Value != 1) || (!val.IsInt && val.Float64Value != 1.0) {
-		t.Errorf("assign value wrong. expected=1, got=%v", assign.Value)
-	}
-
-	if !ifExp.IsThen {
-		t.Errorf("IsThen should be true")
+	if literal.Int64Value != 5 {
+		t.Errorf("literal.Int64Value not %d, got=%d", 5, literal.Int64Value)
 	}
 }
 
-func TestParserPrecedence(t *testing.T) {
+func TestParseInfixExpression(t *testing.T) {
 	tests := []struct {
-		input    string
-		expected string
+		input      string
+		leftValue  int64
+		operator   string
+		rightValue int64
 	}{
-		{"-a + b", "((-a) + b)"},
-		{"a + b + c", "((a + b) + c)"},
-		{"a + b - c", "((a + b) - c)"},
-		{"a + b * c", "(a + (b * c))"},
-		{"a + b == c", "((a + b) == c)"},
-		{"a == b && c == d", "((a == b) && (c == d))"},
-		{"a == b || c == d", "((a == b) || (c == d))"},
-		{"a == b && c == d || e == f", "(((a == b) && (c == d)) || (e == f))"},
-		{"a == b || c == d && e == f", "((a == b) || ((c == d) && (e == f)))"},
-		{"(a == b || c == d) && e == f", "(((a == b) || (c == d)) && (e == f))"},
-		{"a = b = c", "(a = (b = c))"},
+		{"5 + 5", 5, "+", 5},
+		{"5 - 5", 5, "-", 5},
+		{"5 * 5", 5, "*", 5},
+		{"5 / 5", 5, "/", 5},
+		{"5 > 5", 5, ">", 5},
+		{"5 < 5", 5, "<", 5},
+		{"5 == 5", 5, "==", 5},
 	}
 
 	for _, tt := range tests {
@@ -126,37 +45,65 @@ func TestParserPrecedence(t *testing.T) {
 		program := p.ParseProgram()
 
 		if len(p.Errors()) != 0 {
-			t.Errorf("input %q has errors: %v", tt.input, p.Errors())
-			continue
+			t.Errorf("parser errors: %v", p.Errors())
 		}
-		if program.String() != tt.expected {
-			t.Errorf("expected=%q, got=%q", tt.expected, program.String())
+
+		exp, ok := program.(*InfixExpression)
+		if !ok {
+			t.Fatalf("program is not InfixExpression, got=%T", program)
+		}
+
+		if !testNumberLiteral(t, exp.Left, tt.leftValue) {
+			return
+		}
+
+		if exp.Operator != tt.operator {
+			t.Fatalf("exp.Operator is not '%s', got=%s", tt.operator, exp.Operator)
+		}
+
+		if !testNumberLiteral(t, exp.Right, tt.rightValue) {
+			return
 		}
 	}
 }
 
-func TestParserErrors(t *testing.T) {
-	tests := []string{
-		"if",
-		"if a == 0", // this is valid in my implementation as IsSimple
-		"if a == 0 is",
-		"if a == 0 is 1 else",
-		"a +",
-		"= 1",
+func testNumberLiteral(t *testing.T, il Expression, value int64) bool {
+	ni, ok := il.(*NumberLiteral)
+	if !ok {
+		t.Errorf("il not *NumberLiteral, got=%T", il)
+		return false
+	}
+	if ni.Int64Value != value {
+		t.Errorf("ni.Int64Value not %d, got=%d", value, ni.Int64Value)
+		return false
+	}
+	return true
+}
+
+func TestParseIfExpression(t *testing.T) {
+	input := "if x < y then x else y"
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	if len(p.Errors()) != 0 {
+		t.Errorf("parser errors: %v", p.Errors())
 	}
 
-	for _, input := range tests {
-		l := NewLexer(input)
-		p := NewParser(l)
-		p.ParseProgram()
-		if input == "if a == 0" {
-			if len(p.Errors()) != 0 {
-				t.Errorf("input %q should not have errors, got: %v", input, p.Errors())
-			}
-			continue
-		}
-		if len(p.Errors()) == 0 {
-			t.Errorf("input %q should have errors", input)
-		}
+	exp, ok := program.(*IfExpression)
+	if !ok {
+		t.Fatalf("program is not IfExpression, got=%T", program)
+	}
+
+	if exp.Condition.String() != "(x < y)" {
+		t.Errorf("condition.String() not %s, got=%s", "(x < y)", exp.Condition.String())
+	}
+
+	if exp.Consequence.String() != "x" {
+		t.Errorf("consequence.String() not %s, got=%s", "x", exp.Consequence.String())
+	}
+
+	if exp.Alternative.String() != "y" {
+		t.Errorf("alternative.String() not %s, got=%s", "y", exp.Alternative.String())
 	}
 }

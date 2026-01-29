@@ -7,86 +7,48 @@ import (
 	"sync"
 )
 
-type TokenType int
-
-const (
-	TokenEOF TokenType = iota
-	TokenIf
-	TokenIs
-	TokenElse
-	TokenThen
-	TokenAssign    // =
-	TokenPlus      // +
-	TokenMinus     // -
-	TokenAsterisk  // *
-	TokenSlash     // /
-	TokenPercent   // %
-	TokenGt        // >
-	TokenLt        // <
-	TokenGe        // >=
-	TokenLe        // <=
-	TokenEq        // ==
-	TokenAnd       // &&
-	TokenOr        // ||
-	TokenIllegal   // illegal
-	TokenIdent     // identifier
-	TokenNumber    // number literal
-	TokenString    // string literal
-	TokenTrue      // true
-	TokenFalse     // false
-	TokenLParen    // (
-	TokenRParen    // )
-	TokenComma     // ,
-	TokenBang      // !
-)
-
-type Token struct {
-	Type    TokenType
-	Literal string
-}
-
-type Lexer struct {
-	input        string
-	position     int
-	readPosition int
-	ch           byte
-}
-
-var lexerPool = sync.Pool{
+var LexerPool = sync.Pool{
 	New: func() any {
 		return &Lexer{}
 	},
 }
 
+type Lexer struct {
+	Input        string
+	Position     int
+	ReadPosition int
+	Ch           byte
+}
+
 func NewLexer(input string) *Lexer {
-	l := lexerPool.Get().(*Lexer)
+	l := LexerPool.Get().(*Lexer)
 	l.Reset(input)
 	return l
 }
 
 func (l *Lexer) Reset(input string) {
-	l.input = input
-	l.position = 0
-	l.readPosition = 0
-	l.ch = 0
+	l.Input = input
+	l.Position = 0
+	l.ReadPosition = 0
+	l.Ch = 0
 	l.readChar()
 }
 
 func (l *Lexer) readChar() {
-	if l.readPosition >= len(l.input) {
-		l.ch = 0
+	if l.ReadPosition >= len(l.Input) {
+		l.Ch = 0
 	} else {
-		l.ch = l.input[l.readPosition]
+		l.Ch = l.Input[l.ReadPosition]
 	}
-	l.position = l.readPosition
-	l.readPosition++
+	l.Position = l.ReadPosition
+	l.ReadPosition++
 }
 
 func (l *Lexer) peekChar() byte {
-	if l.readPosition >= len(l.input) {
+	if l.ReadPosition >= len(l.Input) {
 		return 0
 	}
-	return l.input[l.readPosition]
+	return l.Input[l.ReadPosition]
 }
 
 func (l *Lexer) NextToken() Token {
@@ -94,7 +56,7 @@ func (l *Lexer) NextToken() Token {
 
 	l.skipWhitespace()
 
-	switch l.ch {
+	switch l.Ch {
 	case '=':
 		if l.peekChar() == '=' {
 			l.readChar()
@@ -131,14 +93,14 @@ func (l *Lexer) NextToken() Token {
 			l.readChar()
 			tok = Token{Type: TokenAnd, Literal: "&&"}
 		} else {
-			tok = Token{Type: TokenIllegal, Literal: string(l.ch)}
+			tok = Token{Type: TokenIllegal, Literal: string(l.Ch)}
 		}
 	case '|':
 		if l.peekChar() == '|' {
 			l.readChar()
 			tok = Token{Type: TokenOr, Literal: "||"}
 		} else {
-			tok = Token{Type: TokenIllegal, Literal: string(l.ch)}
+			tok = Token{Type: TokenIllegal, Literal: string(l.Ch)}
 		}
 	case '(':
 		tok = Token{Type: TokenLParen, Literal: "("}
@@ -147,7 +109,12 @@ func (l *Lexer) NextToken() Token {
 	case ',':
 		tok = Token{Type: TokenComma, Literal: ","}
 	case '!':
-		tok = Token{Type: TokenBang, Literal: "!"}
+		if l.peekChar() == '=' {
+			l.readChar()
+			tok = Token{Type: TokenNotEq, Literal: "!="}
+		} else {
+			tok = Token{Type: TokenBang, Literal: "!"}
+		}
 	case '"':
 		tok.Type = TokenString
 		tok.Literal = l.readString()
@@ -155,16 +122,16 @@ func (l *Lexer) NextToken() Token {
 		tok.Literal = ""
 		tok.Type = TokenEOF
 	default:
-		if isLetter(l.ch) {
+		if isLetter(l.Ch) {
 			tok.Literal = l.readIdentifier()
 			tok.Type = lookupIdent(tok.Literal)
 			return tok
-		} else if isDigit(l.ch) {
+		} else if isDigit(l.Ch) {
 			tok.Literal = l.readNumber()
 			tok.Type = TokenNumber
 			return tok
 		} else {
-			tok = Token{Type: TokenIllegal, Literal: string(l.ch)}
+			tok = Token{Type: TokenIllegal, Literal: string(l.Ch)}
 		}
 	}
 
@@ -173,36 +140,34 @@ func (l *Lexer) NextToken() Token {
 }
 
 func (l *Lexer) skipWhitespace() {
-	for l.ch == ' ' || l.ch == '\t' || l.ch == '\n' || l.ch == '\r' {
+	for l.Ch == ' ' || l.Ch == '\t' || l.Ch == '\n' || l.Ch == '\r' {
 		l.readChar()
 	}
 }
 
 func (l *Lexer) readIdentifier() string {
-	position := l.position
-	for isLetter(l.ch) || isDigit(l.ch) {
+	position := l.Position
+	for isLetter(l.Ch) || isDigit(l.Ch) {
 		l.readChar()
 	}
-	return l.input[position:l.position]
+	return l.Input[position:l.Position]
 }
 
 func (l *Lexer) readNumber() string {
-	position := l.position
-	for isDigit(l.ch) || l.ch == '.' {
+	position := l.Position
+	for isDigit(l.Ch) || l.Ch == '.' {
 		l.readChar()
 	}
-	return l.input[position:l.position]
+	return l.Input[position:l.Position]
 }
 
 func (l *Lexer) readString() string {
 	l.readChar() // skip "
-	position := l.position
-	for l.ch != '"' && l.ch != 0 {
+	position := l.Position
+	for l.Ch != '"' && l.Ch != 0 {
 		l.readChar()
 	}
-	str := l.input[position:l.position]
-	// l.readChar() // would be done by caller or next read?
-	// Actually we should skip the closing quote
+	str := l.Input[position:l.Position]
 	return str
 }
 
@@ -228,6 +193,45 @@ func lookupIdent(ident string) TokenType {
 		return tok
 	}
 	return TokenIdent
+}
+
+type TokenType int
+
+const (
+	TokenEOF TokenType = iota
+	TokenIf
+	TokenIs
+	TokenElse
+	TokenThen
+	TokenAssign    // =
+	TokenPlus      // +
+	TokenMinus     // -
+	TokenAsterisk  // *
+	TokenSlash     // /
+	TokenPercent   // %
+	TokenGt        // >
+	TokenLt        // <
+	TokenGe        // >=
+	TokenLe        // <=
+	TokenEq        // ==
+	TokenAnd       // &&
+	TokenOr        // ||
+	TokenIllegal   // illegal
+	TokenIdent     // identifier
+	TokenNumber    // number literal
+	TokenString    // string literal
+	TokenTrue      // true
+	TokenFalse     // false
+	TokenLParen    // (
+	TokenRParen    // )
+	TokenComma     // ,
+	TokenBang      // !
+	TokenNotEq     // !=
+)
+
+type Token struct {
+	Type    TokenType
+	Literal string
 }
 
 func (t TokenType) String() string {
@@ -260,6 +264,7 @@ func (t TokenType) String() string {
 	case TokenRParen: return ")"
 	case TokenComma: return ","
 	case TokenBang: return "!"
+	case TokenNotEq: return "!="
 	default: return "UNKNOWN"
 	}
 }

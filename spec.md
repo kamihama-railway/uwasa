@@ -18,6 +18,7 @@
 - >= 比较计算关键字
 - <= 比较计算关键字
 - == 相等计算关键字
+- != 不等于计算关键字
 - ! 逻辑非计算关键字
 ## 引擎运行相关
 引擎实例创建前 传入一个 map[string]any 变量列表 实例返回值为any
@@ -45,6 +46,11 @@ res = concat("Hello ", name)
 
 ### 虚拟机执行 (高性能)
 ```go
-engine, _ := uwasa.NewEngineVM("if a > 10 then b = 1")
+// 默认使用栈式虚拟机
+engine, _ := uwasa.NewEngine("if a > 10 then b = 1")
 result, _ := engine.Execute(vars)
+
+// 实验性：切换到寄存器式虚拟机 (RVM)
+engine.UseRegisterVM()
+result, _ = engine.Execute(vars)
 ```

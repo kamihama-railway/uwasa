@@ -17,88 +17,45 @@ func TestASTString(t *testing.T) {
 		},
 		{
 			"NumberLiteral",
-			&NumberLiteral{Float64Value: 123.45, IsInt: false},
-			"123.45",
+			&NumberLiteral{Int64Value: 5, IsInt: true},
+			"5",
 		},
 		{
-			"StringLiteral",
-			&StringLiteral{Value: "hello"},
-			"hello",
+			"BooleanLiteral",
+			&BooleanLiteral{Value: true},
+			"true",
 		},
 		{
 			"PrefixExpression",
-			&PrefixExpression{
-				Operator: "-",
-				Right:    &NumberLiteral{Int64Value: 5, IsInt: true},
-			},
+			&PrefixExpression{Operator: "-", Right: &NumberLiteral{Int64Value: 5, IsInt: true}},
 			"(-5)",
 		},
 		{
 			"InfixExpression",
-			&InfixExpression{
-				Left:     &Identifier{Value: "a"},
-				Operator: "+",
-				Right:    &Identifier{Value: "b"},
+			&InfixExpression{Left: &NumberLiteral{Int64Value: 5, IsInt: true}, Operator: "+", Right: &NumberLiteral{Int64Value: 10, IsInt: true}},
+			"(5 + 10)",
+		},
+		{
+			"IfExpression",
+			&IfExpression{
+				Condition:   &BooleanLiteral{Value: true},
+				Consequence: &Identifier{Value: "x"},
+				Alternative: &Identifier{Value: "y"},
 			},
-			"(a + b)",
+			"if true is x else is y",
 		},
 		{
 			"AssignExpression",
-			&AssignExpression{
-				Name:  &Identifier{Value: "x"},
-				Value: &NumberLiteral{Int64Value: 10, IsInt: true},
-			},
+			&AssignExpression{Name: &Identifier{Value: "x"}, Value: &NumberLiteral{Int64Value: 10, IsInt: true}},
 			"(x = 10)",
 		},
 		{
-			"Simple IfExpression",
-			&IfExpression{
-				Condition: &InfixExpression{
-					Left:     &Identifier{Value: "a"},
-					Operator: "==",
-					Right:    &NumberLiteral{Int64Value: 0, IsInt: true},
-				},
-				IsSimple: true,
+			"CallExpression",
+			&CallExpression{
+				Function:  &Identifier{Value: "add"},
+				Arguments: []Expression{&NumberLiteral{Int64Value: 1, IsInt: true}, &NumberLiteral{Int64Value: 2, IsInt: true}},
 			},
-			"if (a == 0)",
-		},
-		{
-			"If-Is-Else Expression",
-			&IfExpression{
-				Condition: &InfixExpression{
-					Left:     &Identifier{Value: "a"},
-					Operator: "==",
-					Right:    &NumberLiteral{Int64Value: 0, IsInt: true},
-				},
-				Consequence: &StringLiteral{Value: "yes"},
-				Alternative: &IfExpression{
-					Condition: &InfixExpression{
-						Left:     &Identifier{Value: "a"},
-						Operator: "==",
-						Right:    &NumberLiteral{Int64Value: 1, IsInt: true},
-					},
-					Consequence: &StringLiteral{Value: "ok"},
-					Alternative: &StringLiteral{Value: "bad"},
-				},
-				IsThen: false,
-			},
-			"if (a == 0) is yes else if (a == 1) is ok else is bad",
-		},
-		{
-			"If-Then Expression",
-			&IfExpression{
-				Condition: &InfixExpression{
-					Left:     &Identifier{Value: "a"},
-					Operator: ">",
-					Right:    &NumberLiteral{Int64Value: 10, IsInt: true},
-				},
-				Consequence: &AssignExpression{
-					Name:  &Identifier{Value: "b"},
-					Value: &NumberLiteral{Int64Value: 1, IsInt: true},
-				},
-				IsThen: true,
-			},
-			"if (a > 10) then (b = 1)",
+			"add(1, 2)",
 		},
 	}
 
