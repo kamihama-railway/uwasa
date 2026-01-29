@@ -5,7 +5,7 @@ package uwasa
 
 import "fmt"
 
-type NeoOpCode uint16
+type NeoOpCode byte
 
 const (
 	NeoOpPush NeoOpCode = iota
@@ -33,13 +33,28 @@ const (
 	NeoOpAddGlobal
 	NeoOpAddConstGlobal
 	NeoOpFusedCompareGlobalConstJumpIfFalse
+	NeoOpFusedGreaterGlobalConstJumpIfFalse
+	NeoOpFusedLessGlobalConstJumpIfFalse
 	NeoOpEqualGlobalConst
 	NeoOpGreaterGlobalConst
 	NeoOpLessGlobalConst
 	NeoOpAddGlobalGlobal
+	NeoOpSubGlobalGlobal
+	NeoOpMulGlobalGlobal
+	NeoOpAddGC // Global + Const
+	NeoOpSubGC
+	NeoOpMulGC
+	NeoOpDivGC
 	NeoOpGetGlobalJumpIfFalse
 	NeoOpGetGlobalJumpIfTrue
 	NeoOpConcat
+	NeoOpConcat2
+	NeoOpConcatGC
+	NeoOpConcatCG
+	NeoOpAddC
+	NeoOpSubC
+	NeoOpMulC
+	NeoOpDivC
 	NeoOpReturn // New for NeoEx to signal end of execution if needed
 )
 
@@ -69,14 +84,29 @@ func (o NeoOpCode) String() string {
 	case NeoOpEqualConst: return "EQC"
 	case NeoOpAddGlobal: return "ADDG"
 	case NeoOpAddConstGlobal: return "ADDCG"
-	case NeoOpFusedCompareGlobalConstJumpIfFalse: return "FCG CJIF"
+	case NeoOpFusedCompareGlobalConstJumpIfFalse: return "FCG EQJIF"
+	case NeoOpFusedGreaterGlobalConstJumpIfFalse: return "FCG GTJIF"
+	case NeoOpFusedLessGlobalConstJumpIfFalse: return "FCG LTJIF"
 	case NeoOpEqualGlobalConst: return "EQGC"
 	case NeoOpGreaterGlobalConst: return "GTGC"
 	case NeoOpLessGlobalConst: return "LTGC"
 	case NeoOpAddGlobalGlobal: return "ADDGG"
+	case NeoOpSubGlobalGlobal: return "SUBGG"
+	case NeoOpMulGlobalGlobal: return "MULGG"
+	case NeoOpAddGC: return "ADDGC"
+	case NeoOpSubGC: return "SUBGC"
+	case NeoOpMulGC: return "MULGC"
+	case NeoOpDivGC: return "DIVGC"
 	case NeoOpGetGlobalJumpIfFalse: return "GG JIF"
 	case NeoOpGetGlobalJumpIfTrue: return "GG JIT"
 	case NeoOpConcat: return "CONCAT"
+	case NeoOpConcat2: return "CONCAT2"
+	case NeoOpConcatGC: return "CONCATGC"
+	case NeoOpConcatCG: return "CONCATCG"
+	case NeoOpAddC: return "ADDC"
+	case NeoOpSubC: return "SUBC"
+	case NeoOpMulC: return "MULC"
+	case NeoOpDivC: return "DIVC"
 	case NeoOpReturn: return "RET"
 	default: return fmt.Sprintf("NEO_UNKNOWN(%d)", o)
 	}

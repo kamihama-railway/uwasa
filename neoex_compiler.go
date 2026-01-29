@@ -220,46 +220,27 @@ func (c *NeoCompiler) parseInfixExpression(left compilationValue) (compilationVa
 	precedence := c.curPrecedence()
 
 	if op == "+" && left.isString {
-		// Optimization: String concatenation fusion
 		lastIdx := len(c.instructions) - 1
 		canFuse := lastIdx >= 0 && c.instructions[lastIdx].Op == NeoOpConcat
-
 		var nArgs int32
 		if canFuse {
 			nArgs = c.instructions[lastIdx].Arg
 			c.instructions = c.instructions[:lastIdx]
 		}
-
 		if left.isConst && !c.peekTokenIsLiteral() {
 			c.emitPush(left.val)
 			left.isConst = false
 		}
-
 		c.nextToken()
 		right, err := c.parseExpression(precedence)
-		if err != nil {
-			return compilationValue{}, err
-		}
-
+		if err != nil { return compilationValue{}, err }
 		if left.isConst && right.isConst {
 			res, ok := c.foldInfix(left.val, right.val, op)
-			if ok {
-				return compilationValue{isConst: true, val: res, isString: true}, nil
-			}
+			if ok { return compilationValue{isConst: true, val: res, isString: true}, nil }
 		}
-
-		if left.isConst {
-			c.emitPush(left.val)
-		}
-		if right.isConst {
-			c.emitPush(right.val)
-		}
-
-		if canFuse {
-			c.emit(NeoOpConcat, nArgs+1)
-		} else {
-			c.emit(NeoOpConcat, 2)
-		}
+		if left.isConst { c.emitPush(left.val) }
+		if right.isConst { c.emitPush(right.val) }
+		if canFuse { c.emit(NeoOpConcat, nArgs+1) } else { c.emit(NeoOpConcat, 2) }
 		return compilationValue{isConst: false, isString: true}, nil
 	}
 
@@ -269,7 +250,6 @@ func (c *NeoCompiler) parseInfixExpression(left compilationValue) (compilationVa
 				c.nextToken()
 				return c.parseExpression(precedence)
 			} else {
-				// Folded to false
 				oldDiscard := c.discard
 				c.discard = true
 				c.nextToken()
@@ -278,18 +258,11 @@ func (c *NeoCompiler) parseInfixExpression(left compilationValue) (compilationVa
 				return left, nil
 			}
 		}
-
 		jumpFalse := c.emit(NeoOpJumpIfFalse, 0)
 		c.nextToken()
 		right, err := c.parseExpression(precedence)
-		if err != nil {
-			return compilationValue{}, err
-		}
-
-		if right.isConst {
-			c.emitPush(right.val)
-		}
-
+		if err != nil { return compilationValue{}, err }
+		if right.isConst { c.emitPush(right.val) }
 		c.emit(NeoOpNot, 0)
 		c.emit(NeoOpNot, 0)
 		jumpEnd := c.emit(NeoOpJump, 0)
@@ -305,7 +278,6 @@ func (c *NeoCompiler) parseInfixExpression(left compilationValue) (compilationVa
 				c.nextToken()
 				return c.parseExpression(precedence)
 			} else {
-				// Folded to true
 				oldDiscard := c.discard
 				c.discard = true
 				c.nextToken()
@@ -314,18 +286,11 @@ func (c *NeoCompiler) parseInfixExpression(left compilationValue) (compilationVa
 				return left, nil
 			}
 		}
-
 		jumpTrue := c.emit(NeoOpJumpIfTrue, 0)
 		c.nextToken()
 		right, err := c.parseExpression(precedence)
-		if err != nil {
-			return compilationValue{}, err
-		}
-
-		if right.isConst {
-			c.emitPush(right.val)
-		}
-
+		if err != nil { return compilationValue{}, err }
+		if right.isConst { c.emitPush(right.val) }
 		c.emit(NeoOpNot, 0)
 		c.emit(NeoOpNot, 0)
 		jumpEnd := c.emit(NeoOpJump, 0)
@@ -339,20 +304,13 @@ func (c *NeoCompiler) parseInfixExpression(left compilationValue) (compilationVa
 		c.emitPush(left.val)
 		left.isConst = false
 	}
-
 	c.nextToken()
 	right, err := c.parseExpression(precedence)
-	if err != nil {
-		return compilationValue{}, err
-	}
-
+	if err != nil { return compilationValue{}, err }
 	if left.isConst && right.isConst {
 		res, ok := c.foldInfix(left.val, right.val, op)
-		if ok {
-			return compilationValue{isConst: true, val: res}, nil
-		}
+		if ok { return compilationValue{isConst: true, val: res}, nil }
 	}
-
 	if (left.isString || right.isString) && op == "+" {
 		if left.isConst { c.emitPush(left.val) }
 		if right.isConst { c.emitPush(right.val) }
@@ -379,38 +337,20 @@ func (c *NeoCompiler) parseInfixExpression(left compilationValue) (compilationVa
 		if right.isConst && neoIsOne(right.val) { return left, nil }
 	}
 
-	if left.isConst {
-		c.emitPush(left.val)
-	}
-	if right.isConst {
-		c.emitPush(right.val)
-	}
+	if left.isConst { c.emitPush(left.val) }
+	if right.isConst { c.emitPush(right.val) }
 
 	switch op {
 	case "+":
 		if left.isString || right.isString {
-			// Check if we can fuse into an existing Concat
 			lastIdx := len(c.instructions) - 1
 			if lastIdx >= 0 && c.instructions[lastIdx].Op == NeoOpConcat {
-				// We need to move the new operand BEFORE the Concat instruction?
-				// No, the operands are already on stack.
-				// Wait, Pratt parsing: [left-expr] [right-expr]
-				// If left was Concat(N), it means stack has N elements, and then we pushed Concat(N).
-				// That's not right. Concat(N) consumes N elements and pushes 1.
-
-				// If we want to fuse:
-				// [A, B, Concat(2)] + C
-				// We want [A, B, C, Concat(3)]
-
-				// So we remove Concat(2), and emit C, then emit Concat(3).
 				nArgs := c.instructions[lastIdx].Arg
-				c.instructions = c.instructions[:lastIdx] // remove Concat(2)
+				c.instructions = c.instructions[:lastIdx]
 				if right.isConst { c.emitPush(right.val) }
 				c.emit(NeoOpConcat, nArgs+1)
 				return compilationValue{isConst: false, isString: true}, nil
 			}
-
-			// Not already Concat, create new one
 			if left.isConst { c.emitPush(left.val) }
 			if right.isConst { c.emitPush(right.val) }
 			c.emit(NeoOpConcat, 2)
@@ -433,33 +373,22 @@ func (c *NeoCompiler) parseInfixExpression(left compilationValue) (compilationVa
 func (c *NeoCompiler) foldInfix(l, r Value, op string) (Value, bool) {
 	switch op {
 	case "+":
-		if l.Type == ValInt && r.Type == ValInt {
-			return Value{Type: ValInt, Num: l.Num + r.Num}, true
-		}
-		if l.Type == ValString && r.Type == ValString {
-			return Value{Type: ValString, Str: l.Str + r.Str}, true
-		}
-		lf, okL := valToFloat64(l)
-		rf, okR := valToFloat64(r)
-		if okL && okR {
+		if l.Type == ValInt && r.Type == ValInt { return Value{Type: ValInt, Num: l.Num + r.Num}, true }
+		if l.Type == ValString && r.Type == ValString { return Value{Type: ValString, Str: l.Str + r.Str}, true }
+		if (l.Type == ValInt || l.Type == ValFloat) && (r.Type == ValInt || r.Type == ValFloat) {
+			lf, _ := valToFloat64(l); rf, _ := valToFloat64(r)
 			return Value{Type: ValFloat, Num: math.Float64bits(lf + rf)}, true
 		}
 	case "-":
-		if l.Type == ValInt && r.Type == ValInt {
-			return Value{Type: ValInt, Num: l.Num - r.Num}, true
-		}
-		lf, okL := valToFloat64(l)
-		rf, okR := valToFloat64(r)
-		if okL && okR {
+		if l.Type == ValInt && r.Type == ValInt { return Value{Type: ValInt, Num: l.Num - r.Num}, true }
+		if (l.Type == ValInt || l.Type == ValFloat) && (r.Type == ValInt || r.Type == ValFloat) {
+			lf, _ := valToFloat64(l); rf, _ := valToFloat64(r)
 			return Value{Type: ValFloat, Num: math.Float64bits(lf - rf)}, true
 		}
 	case "*":
-		if l.Type == ValInt && r.Type == ValInt {
-			return Value{Type: ValInt, Num: l.Num * r.Num}, true
-		}
-		lf, okL := valToFloat64(l)
-		rf, okR := valToFloat64(r)
-		if okL && okR {
+		if l.Type == ValInt && r.Type == ValInt { return Value{Type: ValInt, Num: l.Num * r.Num}, true }
+		if (l.Type == ValInt || l.Type == ValFloat) && (r.Type == ValInt || r.Type == ValFloat) {
+			lf, _ := valToFloat64(l); rf, _ := valToFloat64(r)
 			return Value{Type: ValFloat, Num: math.Float64bits(lf * rf)}, true
 		}
 	case "/":
@@ -467,32 +396,19 @@ func (c *NeoCompiler) foldInfix(l, r Value, op string) (Value, bool) {
 			c.errors = append(c.errors, "division by zero")
 			return Value{}, false
 		}
-		if l.Type == ValInt && r.Type == ValInt {
-			return Value{Type: ValInt, Num: l.Num / r.Num}, true
-		}
-		lf, okL := valToFloat64(l)
-		rf, okR := valToFloat64(r)
-		if okL && okR {
+		if l.Type == ValInt && r.Type == ValInt { return Value{Type: ValInt, Num: l.Num / r.Num}, true }
+		if (l.Type == ValInt || l.Type == ValFloat) && (r.Type == ValInt || r.Type == ValFloat) {
+			lf, _ := valToFloat64(l); rf, _ := valToFloat64(r)
 			return Value{Type: ValFloat, Num: math.Float64bits(lf / rf)}, true
 		}
 	case "%":
-		if r.Type == ValInt && r.Num == 0 {
-			c.errors = append(c.errors, "division by zero")
-			return Value{}, false
-		}
-		if l.Type == ValInt && r.Type == ValInt {
-			return Value{Type: ValInt, Num: l.Num % r.Num}, true
-		}
-	case "==":
-		return Value{Type: ValBool, Num: boolToUint64(c.compare(l, r) == 0)}, true
-	case ">":
-		return Value{Type: ValBool, Num: boolToUint64(c.compare(l, r) > 0)}, true
-	case "<":
-		return Value{Type: ValBool, Num: boolToUint64(c.compare(l, r) < 0)}, true
-	case ">=":
-		return Value{Type: ValBool, Num: boolToUint64(c.compare(l, r) >= 0)}, true
-	case "<=":
-		return Value{Type: ValBool, Num: boolToUint64(c.compare(l, r) <= 0)}, true
+		if r.Type == ValInt && r.Num == 0 { c.errors = append(c.errors, "division by zero"); return Value{}, false }
+		if l.Type == ValInt && r.Type == ValInt { return Value{Type: ValInt, Num: l.Num % r.Num}, true }
+	case "==": return Value{Type: ValBool, Num: boolToUint64(c.compare(l, r) == 0)}, true
+	case ">": return Value{Type: ValBool, Num: boolToUint64(c.compare(l, r) > 0)}, true
+	case "<": return Value{Type: ValBool, Num: boolToUint64(c.compare(l, r) < 0)}, true
+	case ">=": return Value{Type: ValBool, Num: boolToUint64(c.compare(l, r) >= 0)}, true
+	case "<=": return Value{Type: ValBool, Num: boolToUint64(c.compare(l, r) <= 0)}, true
 	}
 	return Value{}, false
 }
@@ -501,274 +417,151 @@ func (c *NeoCompiler) compare(l, r Value) int {
 	if l.Type == r.Type {
 		switch l.Type {
 		case ValInt:
-			if int64(l.Num) < int64(r.Num) {
-				return -1
-			}
-			if int64(l.Num) > int64(r.Num) {
-				return 1
-			}
+			if int64(l.Num) < int64(r.Num) { return -1 }
+			if int64(l.Num) > int64(r.Num) { return 1 }
 			return 0
 		case ValFloat:
-			lf := math.Float64frombits(l.Num)
-			rf := math.Float64frombits(r.Num)
-			if lf < rf {
-				return -1
-			}
-			if lf > rf {
-				return 1
-			}
+			lf := math.Float64frombits(l.Num); rf := math.Float64frombits(r.Num)
+			if lf < rf { return -1 }
+			if lf > rf { return 1 }
 			return 0
 		case ValString:
-			if l.Str < r.Str {
-				return -1
-			}
-			if l.Str > r.Str {
-				return 1
-			}
+			if l.Str < r.Str { return -1 }
+			if l.Str > r.Str { return 1 }
 			return 0
 		case ValBool:
-			if l.Num < r.Num {
-				return -1
-			}
-			if l.Num > r.Num {
-				return 1
-			}
+			if l.Num < r.Num { return -1 }
+			if l.Num > r.Num { return 1 }
 			return 0
-		case ValNil:
-			return 0
+		case ValNil: return 0
 		}
 	}
-	lf, okL := valToFloat64(l)
-	rf, okR := valToFloat64(r)
+	lf, okL := valToFloat64(l); rf, okR := valToFloat64(r)
 	if okL && okR {
-		if lf < rf {
-			return -1
-		}
-		if lf > rf {
-			return 1
-		}
+		if lf < rf { return -1 }
+		if lf > rf { return 1 }
 		return 0
 	}
-	return 0 // mismatched types usually equal false in engine
+	return 0
 }
 
 func (c *NeoCompiler) parseAssignExpression(left compilationValue) (compilationValue, error) {
-	if left.isConst {
-		return compilationValue{}, fmt.Errorf("left side of assignment must be an identifier")
-	}
+	if left.isConst { return compilationValue{}, fmt.Errorf("left side of assignment must be an identifier") }
 	if c.discard {
 		c.nextToken()
 		_, err := c.parseExpression(ASSIGN)
 		return compilationValue{isConst: false}, err
 	}
 	lastInst := c.instructions[len(c.instructions)-1]
-	if lastInst.Op != NeoOpGetGlobal {
-		return compilationValue{}, fmt.Errorf("left side of assignment must be an identifier")
-	}
+	if lastInst.Op != NeoOpGetGlobal { return compilationValue{}, fmt.Errorf("left side of assignment must be an identifier") }
 	identIdx := lastInst.Arg
 	c.instructions = c.instructions[:len(c.instructions)-1]
-
 	c.nextToken()
 	val, err := c.parseExpression(ASSIGN)
 	if err != nil { return compilationValue{}, err }
-
-	if val.isConst {
-		c.emitPush(val.val)
-	}
-
+	if val.isConst { c.emitPush(val.val) }
 	c.emit(NeoOpSetGlobal, identIdx)
 	return compilationValue{isConst: false}, nil
 }
 
 func (c *NeoCompiler) parseCallExpression(left compilationValue) (compilationValue, error) {
-	if left.isConst {
-		return compilationValue{}, fmt.Errorf("function call must be on an identifier")
-	}
+	if left.isConst { return compilationValue{}, fmt.Errorf("function call must be on an identifier") }
 	if c.discard {
 		numArgs := 0
 		if c.peekToken.Type != TokenRParen {
-			c.nextToken()
-			c.parseExpression(LOWEST)
-			numArgs++
-			for c.peekToken.Type == TokenComma {
-				c.nextToken()
-				c.nextToken()
-				c.parseExpression(LOWEST)
-				numArgs++
-			}
+			c.nextToken(); c.parseExpression(LOWEST); numArgs++
+			for c.peekToken.Type == TokenComma { c.nextToken(); c.nextToken(); c.parseExpression(LOWEST); numArgs++ }
 		}
-		if c.peekToken.Type != TokenRParen {
-			return compilationValue{}, fmt.Errorf("expected ), got %s", c.peekToken.Type)
-		}
-		c.nextToken()
-		return compilationValue{isConst: false}, nil
+		if c.peekToken.Type != TokenRParen { return compilationValue{}, fmt.Errorf("expected ), got %s", c.peekToken.Type) }
+		c.nextToken(); return compilationValue{isConst: false}, nil
 	}
 	lastInst := c.instructions[len(c.instructions)-1]
-	if lastInst.Op != NeoOpGetGlobal {
-		return compilationValue{}, fmt.Errorf("function call must be on an identifier")
-	}
+	if lastInst.Op != NeoOpGetGlobal { return compilationValue{}, fmt.Errorf("function call must be on an identifier") }
 	funcNameIdx := lastInst.Arg
 	c.instructions = c.instructions[:len(c.instructions)-1]
-
 	numArgs := 0
 	if c.peekToken.Type != TokenRParen {
-		c.nextToken()
-		val, err := c.parseExpression(LOWEST)
+		c.nextToken(); val, err := c.parseExpression(LOWEST)
 		if err != nil { return compilationValue{}, err }
 		if val.isConst { c.emitPush(val.val) }
 		numArgs++
-
 		for c.peekToken.Type == TokenComma {
-			c.nextToken()
-			c.nextToken()
-			val, err := c.parseExpression(LOWEST)
+			c.nextToken(); c.nextToken(); val, err = c.parseExpression(LOWEST)
 			if err != nil { return compilationValue{}, err }
 			if val.isConst { c.emitPush(val.val) }
 			numArgs++
 		}
 	}
-
-	if c.peekToken.Type != TokenRParen {
-		return compilationValue{}, fmt.Errorf("expected ), got %s", c.peekToken.Type)
-	}
+	if c.peekToken.Type != TokenRParen { return compilationValue{}, fmt.Errorf("expected ), got %s", c.peekToken.Type) }
 	c.nextToken()
-
 	funcName := c.constants[funcNameIdx].Str
 	if funcName == "concat" {
-		c.emit(NeoOpConcat, int32(numArgs))
-	} else {
-		c.emit(NeoOpCall, funcNameIdx | int32(numArgs << 16))
-	}
+		if numArgs == 2 { c.emit(NeoOpConcat2, 0) } else { c.emit(NeoOpConcat, int32(numArgs)) }
+	} else { c.emit(NeoOpCall, funcNameIdx | int32(numArgs << 16)) }
 	return compilationValue{isConst: false}, nil
 }
 
 func (c *NeoCompiler) parseIfExpression() (compilationValue, error) {
-	c.nextToken() // skip if
-	cond, err := c.parseExpression(LOWEST)
+	c.nextToken(); cond, err := c.parseExpression(LOWEST)
 	if err != nil { return compilationValue{}, err }
-
 	if c.peekToken.Type == TokenThen {
-		c.nextToken() // move to then
-		c.nextToken() // skip then
-
+		c.nextToken(); c.nextToken()
 		if cond.isConst {
-			if isValTruthy(cond.val) {
-				return c.parseExpression(LOWEST)
-			} else {
-				oldDiscard := c.discard
-				c.discard = true
-				_, err = c.parseExpression(LOWEST)
-				c.discard = oldDiscard
+			if isValTruthy(cond.val) { return c.parseExpression(LOWEST) } else {
+				oldDiscard := c.discard; c.discard = true; _, err = c.parseExpression(LOWEST); c.discard = oldDiscard
 				return compilationValue{isConst: true, val: Value{Type: ValNil}}, err
 			}
 		}
-
 		jumpFalse := c.emit(NeoOpJumpIfFalse, 0)
 		cons, err := c.parseExpression(LOWEST)
 		if err != nil { return compilationValue{}, err }
 		if cons.isConst { c.emitPush(cons.val) }
-
 		c.patch(jumpFalse, int32(len(c.instructions)))
 		return compilationValue{isConst: false}, nil
 	}
-
 	if c.peekToken.Type == TokenIs {
 		var jumpEndTargets []int
-
 		for {
-			// Current c.curToken is the condition (or start of it)
-			// But for the first iteration, cond is already parsed.
-
-			if c.peekToken.Type != TokenIs {
-				return compilationValue{}, fmt.Errorf("expected is after if condition, got %s", c.peekToken.Type)
-			}
-			c.nextToken() // move to is
-			c.nextToken() // skip is
-
-			var jumpFalse int
-			var tookBranch bool
+			if c.peekToken.Type != TokenIs { return compilationValue{}, fmt.Errorf("expected is after if condition, got %s", c.peekToken.Type) }
+			c.nextToken(); c.nextToken(); var jumpFalse int; var tookBranch bool
 			if cond.isConst {
 				if isValTruthy(cond.val) {
-					cons, err := c.parseExpression(LOWEST)
-					if err != nil { return compilationValue{}, err }
-					if cons.isConst { c.emitPush(cons.val) }
-					tookBranch = true
-				} else {
-					oldDiscard := c.discard
-					c.discard = true
-					c.parseExpression(LOWEST)
-					c.discard = oldDiscard
-				}
+					cons, err := c.parseExpression(LOWEST); if err != nil { return compilationValue{}, err }
+					if cons.isConst { c.emitPush(cons.val) }; tookBranch = true
+				} else { oldDiscard := c.discard; c.discard = true; c.parseExpression(LOWEST); c.discard = oldDiscard }
 			} else {
 				jumpFalse = c.emit(NeoOpJumpIfFalse, 0)
-				cons, err := c.parseExpression(LOWEST)
-				if err != nil { return compilationValue{}, err }
+				cons, err := c.parseExpression(LOWEST); if err != nil { return compilationValue{}, err }
 				if cons.isConst { c.emitPush(cons.val) }
-				jumpEndTargets = append(jumpEndTargets, c.emit(NeoOpJump, 0))
-				c.patch(jumpFalse, int32(len(c.instructions)))
+				jumpEndTargets = append(jumpEndTargets, c.emit(NeoOpJump, 0)); c.patch(jumpFalse, int32(len(c.instructions)))
 			}
-
 			if tookBranch {
-				// Skip all remaining branches
 				for c.peekToken.Type == TokenElse {
-					c.nextToken() // else
+					c.nextToken()
 					if c.peekToken.Type == TokenIf {
-						c.nextToken() // if
-						c.nextToken() // start of condition
-						oldDiscard := c.discard
-						c.discard = true
-						c.parseExpression(LOWEST) // cond
-						if c.peekToken.Type == TokenIs {
-							c.nextToken()             // is
-							c.nextToken()             // start of consequence
-							c.parseExpression(LOWEST) // cons
-						}
+						c.nextToken(); c.nextToken(); oldDiscard := c.discard; c.discard = true; c.parseExpression(LOWEST)
+						if c.peekToken.Type == TokenIs { c.nextToken(); c.nextToken(); c.parseExpression(LOWEST) }
 						c.discard = oldDiscard
 					} else if c.peekToken.Type == TokenIs {
-						c.nextToken() // is
-						c.nextToken() // skip is
-						oldDiscard := c.discard
-						c.discard = true
-						c.parseExpression(LOWEST) // alt
-						c.discard = oldDiscard
-						break
+						c.nextToken(); c.nextToken(); oldDiscard := c.discard; c.discard = true; c.parseExpression(LOWEST); c.discard = oldDiscard; break
 					}
 				}
 				break
 			}
-
-			if c.peekToken.Type != TokenElse {
-				c.emitPush(Value{Type: ValNil})
-				break
-			}
-			c.nextToken() // consume else
-
-			if c.peekToken.Type == TokenIf {
-				c.nextToken() // cur is if
-				c.nextToken() // cur is start of condition
-				cond, err = c.parseExpression(LOWEST)
-				if err != nil { return compilationValue{}, err }
+			if c.peekToken.Type != TokenElse { c.emitPush(Value{Type: ValNil}); break }
+			c.nextToken()
+			if c.peekToken.Type == TokenIf { c.nextToken(); c.nextToken(); cond, err = c.parseExpression(LOWEST); if err != nil { return compilationValue{}, err }
 				continue
 			}
-
 			if c.peekToken.Type == TokenIs {
-				c.nextToken() // consume is
-				c.nextToken() // skip is
-				alt, err := c.parseExpression(LOWEST)
-				if err != nil { return compilationValue{}, err }
-				if alt.isConst { c.emitPush(alt.val) }
-				break
+				c.nextToken(); c.nextToken(); alt, err := c.parseExpression(LOWEST); if err != nil { return compilationValue{}, err }
+				if alt.isConst { c.emitPush(alt.val) }; break
 			}
-
 			return compilationValue{}, fmt.Errorf("expected if or is after else, got %s", c.peekToken.Type)
 		}
-
-		for _, target := range jumpEndTargets {
-			c.patch(target, int32(len(c.instructions)))
-		}
+		for _, target := range jumpEndTargets { c.patch(target, int32(len(c.instructions))) }
 		return compilationValue{isConst: false}, nil
 	}
-
 	return compilationValue{}, fmt.Errorf("expected then or is after if condition, got %s", c.peekToken.Type)
 }
 
@@ -778,13 +571,9 @@ func (c *NeoCompiler) emit(op NeoOpCode, arg int32) int {
 	return len(c.instructions) - 1
 }
 
-func (c *NeoCompiler) emitPush(v Value) int {
-	return c.emit(NeoOpPush, c.addConstant(v))
-}
+func (c *NeoCompiler) emitPush(v Value) int { return c.emit(NeoOpPush, c.addConstant(v)) }
 
-func (c *NeoCompiler) patch(pos int, arg int32) {
-	c.instructions[pos].Arg = arg
-}
+func (c *NeoCompiler) patch(pos int, arg int32) { c.instructions[pos].Arg = arg }
 
 func neoIsZero(v Value) bool {
 	switch v.Type {
@@ -811,174 +600,153 @@ func (c *NeoCompiler) addConstant(v Value) int32 {
 	case ValString: key = v.Str
 	case ValNil: key = nil
 	}
-	if idx, ok := c.constMap[key]; ok {
-		return idx
-	}
-	idx := int32(len(c.constants))
-	c.constants = append(c.constants, v)
-	c.constMap[key] = idx
+	if idx, ok := c.constMap[key]; ok { return idx }
+	idx := int32(len(c.constants)); c.constants = append(c.constants, v); c.constMap[key] = idx
 	return idx
 }
 
 func (c *NeoCompiler) peephole() {
-	if len(c.instructions) < 2 {
-		return
-	}
-
-	newInsts := make([]neoInstruction, 0, len(c.instructions))
-	oldToNew := make([]int, len(c.instructions)+1)
-
-	for i := 0; i < len(c.instructions); i++ {
-		oldToNew[i] = len(newInsts)
-		inst := c.instructions[i]
-
-		if i+3 < len(c.instructions) &&
-			inst.Op == NeoOpGetGlobal &&
-			c.instructions[i+1].Op == NeoOpPush &&
-			(c.instructions[i+2].Op == NeoOpEqual || c.instructions[i+2].Op == NeoOpGreater || c.instructions[i+2].Op == NeoOpLess) &&
-			c.instructions[i+3].Op == NeoOpJumpIfFalse {
-
-			gIdx := inst.Arg
-			cIdx := c.instructions[i+1].Arg
-			jTarget := c.instructions[i+3].Arg
-
-			if gIdx < 1024 && cIdx < 1024 && jTarget < 4096 && c.instructions[i+2].Op == NeoOpEqual {
-				fusedArg := (gIdx << 22) | (cIdx << 12) | jTarget
-				newInsts = append(newInsts, neoInstruction{Op: NeoOpFusedCompareGlobalConstJumpIfFalse, Arg: fusedArg})
-				oldToNew[i+1] = len(newInsts) - 1
-				oldToNew[i+2] = len(newInsts) - 1
-				oldToNew[i+3] = len(newInsts) - 1
-				i += 3
-				continue
-			}
-		}
-
-		// 2-instruction fusion: Push + GetGlobal + Add -> AddConstGlobal
-		if i+2 < len(c.instructions) &&
-			inst.Op == NeoOpPush &&
-			c.instructions[i+1].Op == NeoOpGetGlobal &&
-			c.instructions[i+2].Op == NeoOpAdd {
-
-			cIdx := inst.Arg
-			gIdx := c.instructions[i+1].Arg
-			if cIdx < 65536 && gIdx < 65536 {
-				newInsts = append(newInsts, neoInstruction{Op: NeoOpAddConstGlobal, Arg: (cIdx << 16) | gIdx})
-				oldToNew[i+1] = len(newInsts) - 1
-				oldToNew[i+2] = len(newInsts) - 1
-				i += 2
-				continue
-			}
-		}
-
-		if i+2 < len(c.instructions) &&
-			inst.Op == NeoOpGetGlobal &&
-			c.instructions[i+1].Op == NeoOpPush {
-
-			gIdx := inst.Arg
-			cIdx := c.instructions[i+1].Arg
-
-			if gIdx < 65536 && cIdx < 65536 {
-				if c.instructions[i+2].Op == NeoOpAdd {
-					newInsts = append(newInsts, neoInstruction{Op: NeoOpAddGlobal, Arg: (cIdx << 16) | gIdx})
-					oldToNew[i+1] = len(newInsts) - 1
-					oldToNew[i+2] = len(newInsts) - 1
-					i += 2
-					continue
+	if len(c.instructions) < 2 { return }
+	for {
+		changed := false
+		newInsts := make([]neoInstruction, 0, len(c.instructions))
+		oldToNew := make([]int, len(c.instructions)+1)
+		for i := 0; i < len(c.instructions); i++ {
+			oldToNew[i] = len(newInsts); inst := c.instructions[i]
+			if i+2 < len(c.instructions) && inst.Op == NeoOpPush && c.instructions[i+1].Op == NeoOpPush {
+				c1 := c.constants[inst.Arg]; c2 := c.constants[c.instructions[i+1].Arg]; op := c.instructions[i+2].Op
+				folded := false; var res Value
+				switch op {
+				case NeoOpAdd:
+					if c1.Type == ValInt && c2.Type == ValInt { res = Value{Type: ValInt, Num: c1.Num + c2.Num}; folded = true } else if c1.Type == ValString && c2.Type == ValString { res = Value{Type: ValString, Str: c1.Str + c2.Str}; folded = true }
+				case NeoOpSub:
+					if c1.Type == ValInt && c2.Type == ValInt { res = Value{Type: ValInt, Num: c1.Num - c2.Num}; folded = true }
+				case NeoOpMul:
+					if c1.Type == ValInt && c2.Type == ValInt { res = Value{Type: ValInt, Num: c1.Num * c2.Num}; folded = true }
 				}
-
-				op := NeoOpCode(0)
-				switch c.instructions[i+2].Op {
-				case NeoOpEqual: op = NeoOpEqualGlobalConst
-				case NeoOpGreater: op = NeoOpGreaterGlobalConst
-				case NeoOpLess: op = NeoOpLessGlobalConst
-				}
-
-				if op != 0 {
-					newInsts = append(newInsts, neoInstruction{Op: op, Arg: (gIdx << 16) | cIdx})
-					oldToNew[i+1] = len(newInsts) - 1
-					oldToNew[i+2] = len(newInsts) - 1
-					i += 2
-					continue
+				if folded {
+					newIdx := c.addConstant(res); newInsts = append(newInsts, neoInstruction{Op: NeoOpPush, Arg: newIdx})
+					for k := 1; k <= 2; k++ { oldToNew[i+k] = len(newInsts) - 1 }; i += 2; changed = true; continue
 				}
 			}
-		}
-
-		if i+2 < len(c.instructions) &&
-			inst.Op == NeoOpGetGlobal &&
-			c.instructions[i+1].Op == NeoOpGetGlobal &&
-			c.instructions[i+2].Op == NeoOpAdd {
-
-			g1Idx := inst.Arg
-			g2Idx := c.instructions[i+1].Arg
-			if g1Idx < 65536 && g2Idx < 65536 {
-				newInsts = append(newInsts, neoInstruction{Op: NeoOpAddGlobalGlobal, Arg: (g1Idx << 16) | g2Idx})
-				oldToNew[i+1] = len(newInsts) - 1
-				oldToNew[i+2] = len(newInsts) - 1
-				i += 2
-				continue
+			if i+3 < len(c.instructions) && inst.Op == NeoOpGetGlobal && c.instructions[i+1].Op == NeoOpPush && (c.instructions[i+2].Op == NeoOpEqual || c.instructions[i+2].Op == NeoOpGreater || c.instructions[i+2].Op == NeoOpLess) && c.instructions[i+3].Op == NeoOpJumpIfFalse {
+				gIdx := inst.Arg; cIdx := c.instructions[i+1].Arg; jTarget := c.instructions[i+3].Arg
+				if gIdx < 1024 && cIdx < 1024 && jTarget < 4096 {
+					op := NeoOpCode(0)
+					switch c.instructions[i+2].Op {
+					case NeoOpEqual: op = NeoOpFusedCompareGlobalConstJumpIfFalse
+					case NeoOpGreater: op = NeoOpFusedGreaterGlobalConstJumpIfFalse
+					case NeoOpLess: op = NeoOpFusedLessGlobalConstJumpIfFalse
+					}
+					if op != 0 {
+						fusedArg := (gIdx << 22) | (cIdx << 12) | jTarget; newInsts = append(newInsts, neoInstruction{Op: op, Arg: fusedArg})
+						for k := 1; k <= 3; k++ { oldToNew[i+k] = len(newInsts) - 1 }; i += 3; changed = true; continue
+					}
+				}
 			}
-		}
-
-		if i+1 < len(c.instructions) &&
-			inst.Op == NeoOpGetGlobal {
-
-			gIdx := inst.Arg
-			jTarget := c.instructions[i+1].Arg
-
-			if gIdx < 65536 && jTarget < 65536 {
-				op := NeoOpCode(0)
+			if i+2 < len(c.instructions) && inst.Op == NeoOpGetGlobal && c.instructions[i+1].Op == NeoOpPush {
+				gIdx := inst.Arg; cIdx := c.instructions[i+1].Arg
+				if gIdx < 65536 && cIdx < 65536 {
+					op := NeoOpCode(0)
+					switch c.instructions[i+2].Op {
+					case NeoOpAdd: op = NeoOpAddGC
+					case NeoOpSub: op = NeoOpSubGC
+					case NeoOpMul: op = NeoOpMulGC
+					case NeoOpDiv: op = NeoOpDivGC
+					case NeoOpEqual: op = NeoOpEqualGlobalConst
+					case NeoOpGreater: op = NeoOpGreaterGlobalConst
+					case NeoOpLess: op = NeoOpLessGlobalConst
+					case NeoOpConcat2: op = NeoOpConcatGC
+					}
+					if op != 0 {
+						newInsts = append(newInsts, neoInstruction{Op: op, Arg: (gIdx << 16) | cIdx})
+						for k := 1; k <= 2; k++ { oldToNew[i+k] = len(newInsts) - 1 }; i += 2; changed = true; continue
+					}
+				}
+			}
+			if i+2 < len(c.instructions) && inst.Op == NeoOpPush && c.instructions[i+1].Op == NeoOpGetGlobal {
+				cIdx := inst.Arg; gIdx := c.instructions[i+1].Arg
+				if cIdx < 65536 && gIdx < 65536 {
+					op := NeoOpCode(0)
+					switch c.instructions[i+2].Op {
+					case NeoOpAdd: op = NeoOpAddConstGlobal
+					case NeoOpConcat2: op = NeoOpConcatCG
+					}
+					if op != 0 {
+						newInsts = append(newInsts, neoInstruction{Op: op, Arg: (gIdx << 16) | cIdx})
+						for k := 1; k <= 2; k++ { oldToNew[i+k] = len(newInsts) - 1 }; i += 2; changed = true; continue
+					}
+				}
+			}
+			if i+1 < len(c.instructions) && inst.Op == NeoOpPush {
+				cIdx := inst.Arg; op := NeoOpCode(0)
 				switch c.instructions[i+1].Op {
-				case NeoOpJumpIfFalse: op = NeoOpGetGlobalJumpIfFalse
-				case NeoOpJumpIfTrue: op = NeoOpGetGlobalJumpIfTrue
+				case NeoOpAdd: op = NeoOpAddC
+				case NeoOpSub: op = NeoOpSubC
+				case NeoOpMul: op = NeoOpMulC
+				case NeoOpDiv: op = NeoOpDivC
 				}
-
 				if op != 0 {
-					newInsts = append(newInsts, neoInstruction{Op: op, Arg: (gIdx << 16) | jTarget})
-					oldToNew[i+1] = len(newInsts) - 1
-					i += 1
-					continue
+					newInsts = append(newInsts, neoInstruction{Op: op, Arg: cIdx})
+					oldToNew[i+1] = len(newInsts) - 1; i += 1; changed = true; continue
 				}
 			}
+			if i+2 < len(c.instructions) && inst.Op == NeoOpGetGlobal && c.instructions[i+1].Op == NeoOpGetGlobal {
+				g1Idx := inst.Arg; g2Idx := c.instructions[i+1].Arg
+				if g1Idx < 65536 && g2Idx < 65536 {
+					op := NeoOpCode(0)
+					switch c.instructions[i+2].Op {
+					case NeoOpAdd: op = NeoOpAddGlobalGlobal
+					case NeoOpSub: op = NeoOpSubGlobalGlobal
+					case NeoOpMul: op = NeoOpMulGlobalGlobal
+					}
+					if op != 0 {
+						newInsts = append(newInsts, neoInstruction{Op: op, Arg: (g1Idx << 16) | g2Idx})
+						for k := 1; k <= 2; k++ { oldToNew[i+k] = len(newInsts) - 1 }; i += 2; changed = true; continue
+					}
+				}
+			}
+			if i+1 < len(c.instructions) && inst.Op == NeoOpGetGlobal {
+				gIdx := inst.Arg; jTarget := c.instructions[i+1].Arg
+				if gIdx < 65536 && jTarget < 65536 {
+					op := NeoOpCode(0)
+					switch c.instructions[i+1].Op {
+					case NeoOpJumpIfFalse: op = NeoOpGetGlobalJumpIfFalse
+					case NeoOpJumpIfTrue: op = NeoOpGetGlobalJumpIfTrue
+					}
+					if op != 0 {
+						newInsts = append(newInsts, neoInstruction{Op: op, Arg: (gIdx << 16) | jTarget})
+						oldToNew[i+1] = len(newInsts) - 1; i += 1; changed = true; continue
+					}
+				}
+			}
+			newInsts = append(newInsts, inst)
 		}
-
-		newInsts = append(newInsts, inst)
-	}
-	oldToNew[len(c.instructions)] = len(newInsts)
-
-	for i := range newInsts {
-		switch newInsts[i].Op {
-		case NeoOpJump, NeoOpJumpIfFalse, NeoOpJumpIfTrue:
-			newInsts[i].Arg = int32(oldToNew[newInsts[i].Arg])
-		case NeoOpFusedCompareGlobalConstJumpIfFalse:
-			gIdx := (newInsts[i].Arg >> 22) & 0x3FF
-			cIdx := (newInsts[i].Arg >> 12) & 0x3FF
-			jTarget := newInsts[i].Arg & 0xFFF
-			newInsts[i].Arg = (gIdx << 22) | (cIdx << 12) | int32(oldToNew[jTarget])
-		case NeoOpGetGlobalJumpIfFalse, NeoOpGetGlobalJumpIfTrue:
-			gIdx := newInsts[i].Arg >> 16
-			jTarget := newInsts[i].Arg & 0xFFFF
-			newInsts[i].Arg = (gIdx << 16) | int32(oldToNew[jTarget])
+		oldToNew[len(c.instructions)] = len(newInsts)
+		for i := range newInsts {
+			switch newInsts[i].Op {
+			case NeoOpJump, NeoOpJumpIfFalse, NeoOpJumpIfTrue: newInsts[i].Arg = int32(oldToNew[newInsts[i].Arg])
+			case NeoOpFusedCompareGlobalConstJumpIfFalse, NeoOpFusedGreaterGlobalConstJumpIfFalse, NeoOpFusedLessGlobalConstJumpIfFalse:
+				gIdx := (newInsts[i].Arg >> 22) & 0x3FF; cIdx := (newInsts[i].Arg >> 12) & 0x3FF; jTarget := newInsts[i].Arg & 0xFFF
+				newInsts[i].Arg = (gIdx << 22) | (cIdx << 12) | int32(oldToNew[jTarget])
+			case NeoOpGetGlobalJumpIfFalse, NeoOpGetGlobalJumpIfTrue:
+				gIdx := newInsts[i].Arg >> 16; jTarget := newInsts[i].Arg & 0xFFFF
+				newInsts[i].Arg = (gIdx << 16) | int32(oldToNew[jTarget])
+			}
 		}
+		c.instructions = newInsts
+		if !changed { break }
 	}
-
-	// Second pass for Add -> Concat fusion
-	if len(newInsts) >= 2 {
-		finalInsts := make([]neoInstruction, 0, len(newInsts))
-		for i := 0; i < len(newInsts); i++ {
-			inst := newInsts[i]
+	if len(c.instructions) >= 2 {
+		finalInsts := make([]neoInstruction, 0, len(c.instructions))
+		for i := 0; i < len(c.instructions); i++ {
+			inst := c.instructions[i]
 			if inst.Op == NeoOpAdd && len(finalInsts) > 0 {
 				lastIdx := len(finalInsts) - 1
-				if finalInsts[lastIdx].Op == NeoOpConcat {
-					finalInsts[lastIdx].Arg++
-					continue
-				}
-				// Also pattern: [PushString, any, Add] or [any, PushString, Add]
-				// But we don't easily know if 'any' is a string.
+				if finalInsts[lastIdx].Op == NeoOpConcat { finalInsts[lastIdx].Arg++; continue }
 			}
 			finalInsts = append(finalInsts, inst)
 		}
-		newInsts = finalInsts
+		c.instructions = finalInsts
 	}
-
-	c.instructions = newInsts
 }

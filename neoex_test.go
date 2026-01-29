@@ -119,3 +119,19 @@ func TestNeoExVM_StringFusion(t *testing.T) {
 		t.Errorf("String fusion failed: expected Concat with 4 args, got %d", nArgs)
 	}
 }
+
+func TestNeoExVM_ConstantFold(t *testing.T) {
+	input := `"foo" + "bar" + "baz"`
+	c := NewNeoCompiler(input)
+	bc, err := c.Compile()
+	if err != nil {
+		t.Fatalf("Compile error: %v", err)
+	}
+	if len(bc.Instructions) != 2 { // Push, Return
+		t.Errorf("Expected 2 instructions, got %d", len(bc.Instructions))
+	}
+	res := bc.Constants[bc.Instructions[0].Arg].Str
+	if res != "foobarbaz" {
+		t.Errorf("Expected foobarbaz, got %s", res)
+	}
+}
