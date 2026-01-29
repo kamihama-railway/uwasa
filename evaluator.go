@@ -4,9 +4,8 @@
 package uwasa
 
 import (
-	"bytes"
+	"github.com/kamihama-railway/uwasa/types"
 	"fmt"
-	"sync"
 )
 
 var (
@@ -215,47 +214,13 @@ func evalComparison(operator string, left, right any) (any, error) {
 	return nil, fmt.Errorf("invalid comparison: %T %s %T", left, operator, right)
 }
 
-var bufferPool = sync.Pool{
-	New: func() any {
-		return new(bytes.Buffer)
-	},
-}
 
-type BuiltinFunc func(args ...any) (any, error)
 
-var builtins = map[string]BuiltinFunc{
-	"concat": func(args ...any) (any, error) {
-		// 1. Pre-calculate total length
-		totalLen := 0
-		argStrings := make([]string, len(args))
-		for i, arg := range args {
-			switch v := arg.(type) {
-			case string:
-				argStrings[i] = v
-			case int64:
-				argStrings[i] = fmt.Sprintf("%d", v)
-			case float64:
-				argStrings[i] = fmt.Sprintf("%g", v)
-			case bool:
-				argStrings[i] = fmt.Sprintf("%v", v)
-			default:
-				argStrings[i] = fmt.Sprintf("%v", v)
-			}
-			totalLen += len(argStrings[i])
-		}
+var bufferPool = types.BufferPool
 
-		// 2. Use pooled buffer
-		buf := bufferPool.Get().(*bytes.Buffer)
-		buf.Reset()
-		buf.Grow(totalLen)
-		for _, s := range argStrings {
-			buf.WriteString(s)
-		}
-		res := buf.String()
-		bufferPool.Put(buf)
-		return res, nil
-	},
-}
+type BuiltinFunc = types.BuiltinFunc
+
+var builtins = types.Builtins
 
 func toFloat64(v any) (float64, bool) {
 	switch val := v.(type) {

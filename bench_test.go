@@ -1,6 +1,7 @@
 package uwasa
 
 import (
+	"github.com/kamihama-railway/uwasa/neoex"
 	"testing"
 )
 
@@ -115,6 +116,17 @@ func BenchmarkEngineExecuteWithContext(b *testing.B) {
 	}
 }
 
+func BenchmarkEngineExecuteWithContext_NeoEx(b *testing.B) {
+	input := `if a == 0 is "yes" else if a == 1 is "ok" else is "bad"`
+	engine, _ := NewEngineVMNeoEx(input)
+	ctx := &benchContext{vars: map[string]any{"a": 1}}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		engine.ExecuteWithContext(ctx)
+	}
+}
+
 func BenchmarkEngineExecuteWithContext_RegisterVM(b *testing.B) {
 	input := `if a == 0 is "yes" else if a == 1 is "ok" else is "bad"`
 	engine, _ := NewEngineVMWithOptions(input, EngineOptions{UseRegisterVM: true})
@@ -173,6 +185,19 @@ func BenchmarkEngineExecuteWithContext_Recompiled(b *testing.B) {
 func BenchmarkComplexExpression(b *testing.B) {
 	input := `if (a + b) * (c - d) > 100 && e == "test" then f = 1`
 	engine, _ := NewEngine(input)
+	vars := map[string]any{
+		"a": int64(50), "b": int64(60), "c": int64(10), "d": int64(5), "e": "test",
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		engine.Execute(vars)
+	}
+}
+
+func BenchmarkComplexExpression_NeoEx(b *testing.B) {
+	input := `if (a + b) * (c - d) > 100 && e == "test" then f = 1`
+	engine, _ := NewEngineVMNeoEx(input)
 	vars := map[string]any{
 		"a": int64(50), "b": int64(60), "c": int64(10), "d": int64(5), "e": "test",
 	}
@@ -245,5 +270,32 @@ func BenchmarkComplexExpression_Recompiled(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		engine.Execute(vars)
+	}
+}
+
+func BenchmarkEngineExecute_NeoEx(b *testing.B) {
+	input := "1 + 2 * 3"
+	engine, _ := NewEngineVMNeoEx(input)
+	vars := map[string]any{}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = engine.Execute(vars)
+	}
+}
+
+func BenchmarkNeoExCompiler(b *testing.B) {
+	input := "1 + 2 * 3 + a - b * c / d % e == f && g || !h"
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		c := neoex.NewCompiler(input)
+		_, _ = c.Compile()
+	}
+}
+
+func BenchmarkStandardCompiler(b *testing.B) {
+	input := "1 + 2 * 3 + a - b * c / d % e == f && g || !h"
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = NewEngineVM(input)
 	}
 }

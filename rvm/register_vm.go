@@ -1,15 +1,16 @@
 // Copyright (c) 2026 WJQserver, Kamihama Railway Group. All rights reserved.
 // Licensed under the GNU Affero General Public License, version 3.0 (the "AGPL").
 
-package uwasa
+package rvm
 
 import (
 	"bytes"
 	"fmt"
 	"math"
+	"github.com/kamihama-railway/uwasa/types"
 )
 
-func RunRegisterVM(bc *RegisterBytecode, ctx Context) (any, error) {
+func RunRegisterVM(bc *RegisterBytecode, ctx types.Context) (any, error) {
 	if bc == nil || len(bc.Instructions) == 0 {
 		return nil, nil
 	}
@@ -18,7 +19,7 @@ func RunRegisterVM(bc *RegisterBytecode, ctx Context) (any, error) {
 	// This ensures that single-register instructions (using uint8 indices)
 	// can never trigger a Go panic for out-of-bounds access,
 	// providing memory safety without per-instruction checks in the hot loop.
-	var registers [256]Value
+	var registers [256]types.Value
 	regs := registers[:]
 
 	pc := 0
@@ -26,7 +27,7 @@ func RunRegisterVM(bc *RegisterBytecode, ctx Context) (any, error) {
 	consts := bc.Constants
 	nInsts := len(insts)
 
-	mapCtx, isMapCtx := ctx.(*MapContext)
+	mapCtx, isMapCtx := ctx.(*types.MapContext)
 
 	for pc < nInsts {
 		inst := insts[pc]
@@ -40,17 +41,17 @@ func RunRegisterVM(bc *RegisterBytecode, ctx Context) (any, error) {
 			name := consts[inst.Arg].Str
 			var val any
 			if isMapCtx {
-				val = mapCtx.vars[name]
+				val = mapCtx.Vars[name]
 			} else {
 				val, _ = ctx.Get(name)
 			}
-			regs[inst.Dest] = FromInterface(val)
+			regs[inst.Dest] = fromInterface(val)
 
 		case ROpSetGlobal:
 			name := consts[inst.Arg].Str
 			val := regs[inst.Src1]
 			if isMapCtx {
-				mapCtx.vars[name] = val.ToInterface()
+				mapCtx.Vars[name] = val.ToInterface()
 			} else {
 				ctx.Set(name, val.ToInterface())
 			}
@@ -61,65 +62,65 @@ func RunRegisterVM(bc *RegisterBytecode, ctx Context) (any, error) {
 		case ROpAdd:
 			l := regs[inst.Src1]
 			r := regs[inst.Src2]
-			if l.Type == ValInt && r.Type == ValInt {
-				regs[inst.Dest] = Value{Type: ValInt, Num: l.Num + r.Num}
-			} else if l.Type == ValString && r.Type == ValString {
-				regs[inst.Dest] = Value{Type: ValString, Str: l.Str + r.Str}
+			if l.Type == types.ValInt && r.Type == types.ValInt {
+				regs[inst.Dest] = types.Value{Type: types.ValInt, Num: l.Num + r.Num}
+			} else if l.Type == types.ValString && r.Type == types.ValString {
+				regs[inst.Dest] = types.Value{Type: types.ValString, Str: l.Str + r.Str}
 			} else {
 				lf, _ := valToFloat64(l)
 				rf, _ := valToFloat64(r)
-				regs[inst.Dest] = Value{Type: ValFloat, Num: math.Float64bits(lf + rf)}
+				regs[inst.Dest] = types.Value{Type: types.ValFloat, Num: math.Float64bits(lf + rf)}
 			}
 
 		case ROpSub:
 			l := regs[inst.Src1]
 			r := regs[inst.Src2]
-			if l.Type == ValInt && r.Type == ValInt {
-				regs[inst.Dest] = Value{Type: ValInt, Num: l.Num - r.Num}
+			if l.Type == types.ValInt && r.Type == types.ValInt {
+				regs[inst.Dest] = types.Value{Type: types.ValInt, Num: l.Num - r.Num}
 			} else {
 				lf, _ := valToFloat64(l)
 				rf, _ := valToFloat64(r)
-				regs[inst.Dest] = Value{Type: ValFloat, Num: math.Float64bits(lf - rf)}
+				regs[inst.Dest] = types.Value{Type: types.ValFloat, Num: math.Float64bits(lf - rf)}
 			}
 
 		case ROpMul:
 			l := regs[inst.Src1]
 			r := regs[inst.Src2]
-			if l.Type == ValInt && r.Type == ValInt {
-				regs[inst.Dest] = Value{Type: ValInt, Num: l.Num * r.Num}
+			if l.Type == types.ValInt && r.Type == types.ValInt {
+				regs[inst.Dest] = types.Value{Type: types.ValInt, Num: l.Num * r.Num}
 			} else {
 				lf, _ := valToFloat64(l)
 				rf, _ := valToFloat64(r)
-				regs[inst.Dest] = Value{Type: ValFloat, Num: math.Float64bits(lf * rf)}
+				regs[inst.Dest] = types.Value{Type: types.ValFloat, Num: math.Float64bits(lf * rf)}
 			}
 
 		case ROpDiv:
 			l := regs[inst.Src1]
 			r := regs[inst.Src2]
-			if r.Type == ValInt && r.Num == 0 {
+			if r.Type == types.ValInt && r.Num == 0 {
 				return nil, fmt.Errorf("division by zero")
 			}
-			if r.Type == ValFloat && math.Float64frombits(r.Num) == 0 {
+			if r.Type == types.ValFloat && math.Float64frombits(r.Num) == 0 {
 				return nil, fmt.Errorf("division by zero")
 			}
-			if l.Type == ValInt && r.Type == ValInt {
-				regs[inst.Dest] = Value{Type: ValInt, Num: l.Num / r.Num}
+			if l.Type == types.ValInt && r.Type == types.ValInt {
+				regs[inst.Dest] = types.Value{Type: types.ValInt, Num: l.Num / r.Num}
 			} else {
 				lf, _ := valToFloat64(l)
 				rf, _ := valToFloat64(r)
-				regs[inst.Dest] = Value{Type: ValFloat, Num: math.Float64bits(lf / rf)}
+				regs[inst.Dest] = types.Value{Type: types.ValFloat, Num: math.Float64bits(lf / rf)}
 			}
 
 		case ROpMod:
 			l := regs[inst.Src1]
 			r := regs[inst.Src2]
-			if r.Type != ValInt {
+			if r.Type != types.ValInt {
 				return nil, fmt.Errorf("modulo operator supports only integers")
 			}
 			if r.Num == 0 {
 				return nil, fmt.Errorf("division by zero")
 			}
-			regs[inst.Dest] = Value{Type: ValInt, Num: l.Num % r.Num}
+			regs[inst.Dest] = types.Value{Type: types.ValInt, Num: l.Num % r.Num}
 
 		case ROpEqual:
 			l := regs[inst.Src1]
@@ -127,11 +128,11 @@ func RunRegisterVM(bc *RegisterBytecode, ctx Context) (any, error) {
 			res := false
 			if l.Type == r.Type {
 				switch l.Type {
-				case ValInt, ValFloat, ValBool:
+				case types.ValInt, types.ValFloat, types.ValBool:
 					res = l.Num == r.Num
-				case ValString:
+				case types.ValString:
 					res = l.Str == r.Str
-				case ValNil:
+				case types.ValNil:
 					res = true
 				}
 			} else {
@@ -141,73 +142,73 @@ func RunRegisterVM(bc *RegisterBytecode, ctx Context) (any, error) {
 					res = lf == rf
 				}
 			}
-			regs[inst.Dest] = Value{Type: ValBool, Num: boolToUint64(res)}
+			regs[inst.Dest] = types.Value{Type: types.ValBool, Num: boolToUint64(res)}
 
 		case ROpGreater:
 			l := regs[inst.Src1]
 			r := regs[inst.Src2]
 			res := false
-			if l.Type == ValInt && r.Type == ValInt {
+			if l.Type == types.ValInt && r.Type == types.ValInt {
 				res = int64(l.Num) > int64(r.Num)
 			} else {
 				lf, _ := valToFloat64(l)
 				rf, _ := valToFloat64(r)
 				res = lf > rf
 			}
-			regs[inst.Dest] = Value{Type: ValBool, Num: boolToUint64(res)}
+			regs[inst.Dest] = types.Value{Type: types.ValBool, Num: boolToUint64(res)}
 
 		case ROpLess:
 			l := regs[inst.Src1]
 			r := regs[inst.Src2]
 			res := false
-			if l.Type == ValInt && r.Type == ValInt {
+			if l.Type == types.ValInt && r.Type == types.ValInt {
 				res = int64(l.Num) < int64(r.Num)
 			} else {
 				lf, _ := valToFloat64(l)
 				rf, _ := valToFloat64(r)
 				res = lf < rf
 			}
-			regs[inst.Dest] = Value{Type: ValBool, Num: boolToUint64(res)}
+			regs[inst.Dest] = types.Value{Type: types.ValBool, Num: boolToUint64(res)}
 
 		case ROpGreaterEqual:
 			l := regs[inst.Src1]
 			r := regs[inst.Src2]
 			res := false
-			if l.Type == ValInt && r.Type == ValInt {
+			if l.Type == types.ValInt && r.Type == types.ValInt {
 				res = int64(l.Num) >= int64(r.Num)
 			} else {
 				lf, _ := valToFloat64(l)
 				rf, _ := valToFloat64(r)
 				res = lf >= rf
 			}
-			regs[inst.Dest] = Value{Type: ValBool, Num: boolToUint64(res)}
+			regs[inst.Dest] = types.Value{Type: types.ValBool, Num: boolToUint64(res)}
 
 		case ROpLessEqual:
 			l := regs[inst.Src1]
 			r := regs[inst.Src2]
 			res := false
-			if l.Type == ValInt && r.Type == ValInt {
+			if l.Type == types.ValInt && r.Type == types.ValInt {
 				res = int64(l.Num) <= int64(r.Num)
 			} else {
 				lf, _ := valToFloat64(l)
 				rf, _ := valToFloat64(r)
 				res = lf <= rf
 			}
-			regs[inst.Dest] = Value{Type: ValBool, Num: boolToUint64(res)}
+			regs[inst.Dest] = types.Value{Type: types.ValBool, Num: boolToUint64(res)}
 
 		case ROpAnd:
 			l := regs[inst.Src1]
 			r := regs[inst.Src2]
-			regs[inst.Dest] = Value{Type: ValBool, Num: boolToUint64(isValTruthy(l) && isValTruthy(r))}
+			regs[inst.Dest] = types.Value{Type: types.ValBool, Num: boolToUint64(isValTruthy(l) && isValTruthy(r))}
 
 		case ROpOr:
 			l := regs[inst.Src1]
 			r := regs[inst.Src2]
-			regs[inst.Dest] = Value{Type: ValBool, Num: boolToUint64(isValTruthy(l) || isValTruthy(r))}
+			regs[inst.Dest] = types.Value{Type: types.ValBool, Num: boolToUint64(isValTruthy(l) || isValTruthy(r))}
 
 		case ROpNot:
 			l := regs[inst.Src1]
-			regs[inst.Dest] = Value{Type: ValBool, Num: boolToUint64(!isValTruthy(l))}
+			regs[inst.Dest] = types.Value{Type: types.ValBool, Num: boolToUint64(!isValTruthy(l))}
 
 		case ROpJump:
 			pc = int(inst.Arg)
@@ -238,12 +239,12 @@ func RunRegisterVM(bc *RegisterBytecode, ctx Context) (any, error) {
 				args[i] = regs[argsStart+i].ToInterface()
 			}
 
-			if builtin, ok := builtins[name]; ok {
+			if builtin, ok := types.Builtins[name]; ok {
 				res, err := builtin(args...)
 				if err != nil {
 					return nil, err
 				}
-				regs[inst.Dest] = FromInterface(res)
+				regs[inst.Dest] = fromInterface(res)
 			} else {
 				return nil, fmt.Errorf("builtin function not found: %s", name)
 			}
@@ -266,13 +267,13 @@ func RunRegisterVM(bc *RegisterBytecode, ctx Context) (any, error) {
 				v := regs[argsStart+i]
 				var s string
 				switch v.Type {
-				case ValString:
+				case types.ValString:
 					s = v.Str
-				case ValInt:
+				case types.ValInt:
 					s = fmt.Sprintf("%d", int64(v.Num))
-				case ValFloat:
+				case types.ValFloat:
 					s = fmt.Sprintf("%g", math.Float64frombits(v.Num))
-				case ValBool:
+				case types.ValBool:
 					if v.Num != 0 {
 						s = "true"
 					} else {
@@ -284,15 +285,15 @@ func RunRegisterVM(bc *RegisterBytecode, ctx Context) (any, error) {
 				argStrings[i] = s
 				totalLen += len(s)
 			}
-			buf := bufferPool.Get().(*bytes.Buffer)
+			buf := types.BufferPool.Get().(*bytes.Buffer)
 			buf.Reset()
 			buf.Grow(totalLen)
 			for _, s := range argStrings {
 				buf.WriteString(s)
 			}
 			res := buf.String()
-			bufferPool.Put(buf)
-			regs[inst.Dest] = Value{Type: ValString, Str: res}
+			types.BufferPool.Put(buf)
+			regs[inst.Dest] = types.Value{Type: types.ValString, Str: res}
 
 		case ROpReturn:
 			return regs[inst.Src1].ToInterface(), nil
@@ -300,4 +301,45 @@ func RunRegisterVM(bc *RegisterBytecode, ctx Context) (any, error) {
 	}
 
 	return nil, nil
+}
+
+func valToFloat64(v types.Value) (float64, bool) {
+	switch v.Type {
+	case types.ValFloat: return math.Float64frombits(v.Num), true
+	case types.ValInt: return float64(int64(v.Num)), true
+	}
+	return 0, false
+}
+
+func isValTruthy(v types.Value) bool {
+	switch v.Type {
+	case types.ValBool: return v.Num != 0
+	case types.ValNil: return false
+	default: return true
+	}
+}
+
+func boolToUint64(b bool) uint64 {
+	if b { return 1 }
+	return 0
+}
+
+func fromInterface(v any) types.Value {
+	switch val := v.(type) {
+	case int64:
+		return types.Value{Type: types.ValInt, Num: uint64(val)}
+	case int:
+		return types.Value{Type: types.ValInt, Num: uint64(val)}
+	case float64:
+		return types.Value{Type: types.ValFloat, Num: math.Float64bits(val)}
+	case bool:
+		if val {
+			return types.Value{Type: types.ValBool, Num: 1}
+		}
+		return types.Value{Type: types.ValBool, Num: 0}
+	case string:
+		return types.Value{Type: types.ValString, Str: val}
+	default:
+		return types.Value{Type: types.ValNil}
+	}
 }

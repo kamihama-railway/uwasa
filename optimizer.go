@@ -179,14 +179,11 @@ func Fold(node Node) Node {
 			if folded != nil {
 				n.Arguments[i] = folded.(Expression)
 			}
-			if _, ok := n.Arguments[i].(Literal); !ok {
-				// We consider StringLiteral, NumberLiteral, BooleanLiteral as constants
-				// Let's define a Literal interface or check specifically
-				switch n.Arguments[i].(type) {
-				case *StringLiteral, *NumberLiteral, *BooleanLiteral:
-				default:
-					allConst = false
-				}
+			// We consider StringLiteral, NumberLiteral, BooleanLiteral as constants
+			switch n.Arguments[i].(type) {
+			case *StringLiteral, *NumberLiteral, *BooleanLiteral:
+			default:
+				allConst = false
 			}
 		}
 		// If it's a call to "concat" with all constant arguments, we can fold it
@@ -194,7 +191,8 @@ func Fold(node Node) Node {
 			res := ""
 			for _, arg := range n.Arguments {
 				switch a := arg.(type) {
-				case *StringLiteral: res += a.Value
+				case *StringLiteral:
+					res += a.Value
 				case *NumberLiteral:
 					if a.IsInt {
 						res += fmt.Sprintf("%d", a.Int64Value)
@@ -216,15 +214,6 @@ func Fold(node Node) Node {
 	}
 	return node
 }
-
-type Literal interface {
-	Expression
-	isLiteral()
-}
-
-func (n *NumberLiteral) isLiteral()  {}
-func (n *StringLiteral) isLiteral()  {}
-func (n *BooleanLiteral) isLiteral() {}
 
 func getFloatValues(l, r *NumberLiteral) (float64, float64) {
 	var lv, rv float64
