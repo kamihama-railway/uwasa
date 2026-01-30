@@ -26,5 +26,6 @@
 - [x] 实现指令融合优化 (Instruction Fusion)
 - [x] 实现常量快径优化 (Constant Fast Path)
 - [x] 补全逻辑非 (`!`) 运算符支持
+- [x] 实现实验性高性能一阶段编译器及泛型优化虚拟机 (NeoEx)
 
 

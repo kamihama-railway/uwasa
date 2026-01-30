@@ -125,6 +125,16 @@ func BenchmarkOptimizationComparison(b *testing.B) {
 				_, _ = engine.Execute(sc.vars)
 			}
 		})
+		b.Run(sc.name+"/NeoEx", func(b *testing.B) {
+			engine, err := NewEngineVMNeo(sc.input)
+			if err != nil {
+				b.Fatalf("NewEngineVMNeo error: %v", err)
+			}
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				_, _ = engine.Execute(sc.vars)
+			}
+		})
 	}
 }
 
@@ -144,6 +154,13 @@ func BenchmarkMixedTypeArithmetic(b *testing.B) {
 	})
 	b.Run("IntFloat_RegisterVM", func(b *testing.B) {
 		engine, _ := NewEngineVMWithOptions(input, EngineOptions{UseRegisterVM: true})
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			_, _ = engine.Execute(vars)
+		}
+	})
+	b.Run("IntFloat_NeoEx", func(b *testing.B) {
+		engine, _ := NewEngineVMNeo(input)
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			_, _ = engine.Execute(vars)
@@ -174,6 +191,13 @@ func BenchmarkConcatBuiltin(b *testing.B) {
 			_, _ = engine.Execute(vars)
 		}
 	})
+	b.Run("Variables_NeoEx", func(b *testing.B) {
+		engine, _ := NewEngineVMNeo(input)
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			_, _ = engine.Execute(vars)
+		}
+	})
 }
 
 func BenchmarkStringConcatenation(b *testing.B) {
@@ -192,6 +216,13 @@ func BenchmarkStringConcatenation(b *testing.B) {
 	})
 	b.Run("ConstStrings_RegisterVM", func(b *testing.B) {
 		engine, _ := NewEngineVMWithOptions(input, EngineOptions{UseRegisterVM: true})
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			_, _ = engine.Execute(vars)
+		}
+	})
+	b.Run("ConstStrings_NeoEx", func(b *testing.B) {
+		engine, _ := NewEngineVMNeo(input)
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			_, _ = engine.Execute(vars)
