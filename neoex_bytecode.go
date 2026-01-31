@@ -144,5 +144,4 @@ type neoInstruction struct {
 type NeoBytecode struct {
 	Instructions []neoInstruction
 	Constants    []Value
-	Names        []string
 }

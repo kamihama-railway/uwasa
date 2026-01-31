@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"sync"
 )
 
 type compilationValue struct {
@@ -22,26 +23,56 @@ type NeoCompiler struct {
 	
 	instructions []neoInstruction
 	constants    []Value
-	constMap     map[any]int32
+
+	constMapInt    map[int64]int32
+	constMapFloat  map[uint64]int32
+	constMapBool   map[bool]int32
+	constMapString map[string]int32
+	constMapOther  map[any]int32
 	
 	discard bool // New: discard emitted instructions
 	errors  []string
 }
 
+var neoCompilerPool = sync.Pool{
+	New: func() any {
+		return &NeoCompiler{
+			constMapInt:    make(map[int64]int32),
+			constMapFloat:  make(map[uint64]int32),
+			constMapBool:   make(map[bool]int32),
+			constMapString: make(map[string]int32),
+			constMapOther:  make(map[any]int32),
+		}
+	},
+}
+
 func NewNeoCompiler(input string) *NeoCompiler {
 	l := lexerPool.Get().(*Lexer)
 	l.Reset(input)
-	c := &NeoCompiler{
-		lexer:    l,
-		constMap: make(map[any]int32),
-	}
-	c.nextToken()
-	c.nextToken()
+	c := neoCompilerPool.Get().(*NeoCompiler)
+	c.lexer = l
+	c.Reset()
 	return c
+}
+
+func (c *NeoCompiler) Reset() {
+	c.instructions = c.instructions[:0]
+	c.constants = c.constants[:0]
+	for k := range c.constMapInt { delete(c.constMapInt, k) }
+	for k := range c.constMapFloat { delete(c.constMapFloat, k) }
+	for k := range c.constMapBool { delete(c.constMapBool, k) }
+	for k := range c.constMapString { delete(c.constMapString, k) }
+	for k := range c.constMapOther { delete(c.constMapOther, k) }
+	c.errors = c.errors[:0]
+	c.discard = false
+	c.nextToken()
+	c.nextToken()
 }
 
 func (c *NeoCompiler) Close() {
 	lexerPool.Put(c.lexer)
+	c.lexer = nil
+	neoCompilerPool.Put(c)
 }
 
 func (c *NeoCompiler) nextToken() {
@@ -67,17 +98,9 @@ func (c *NeoCompiler) Compile() (*NeoBytecode, error) {
 	c.peephole()
 	c.emit(NeoOpReturn, 0)
 	
-	names := make([]string, len(c.constants))
-	for i, v := range c.constants {
-		if v.Type == ValString {
-			names[i] = v.Str
-		}
-	}
-	
 	return &NeoBytecode{
 		Instructions: c.instructions,
 		Constants:    c.constants,
-		Names:        names,
 	}, nil
 }
 
@@ -580,9 +603,127 @@ func (c *NeoCompiler) parseIfExpression() (compilationValue, error) {
 }
 
 func (c *NeoCompiler) emit(op NeoOpCode, arg int32) int {
-	if c.discard { return -1 }
+	if c.discard {
+		return -1
+	}
+
+	n := len(c.instructions)
+
+	// 3rd-order patterns (GC, CG, GG) and 2nd-order (C)
+	// We skip Jump patterns here because they require knowing the target range,
+	// which is not known during emit (patched later). Jumps are handled in peephole.
+	switch op {
+	case NeoOpAdd, NeoOpSub, NeoOpMul, NeoOpDiv, NeoOpEqual, NeoOpGreater, NeoOpLess, NeoOpConcat2:
+		if n >= 2 {
+			i1 := c.instructions[n-2]
+			i2 := c.instructions[n-1]
+			if i1.Op == NeoOpGetGlobal && i2.Op == NeoOpPush {
+				if i1.Arg < 65536 && i2.Arg < 65536 {
+					newOp := NeoOpCode(0)
+					switch op {
+					case NeoOpAdd: newOp = NeoOpAddGC
+					case NeoOpSub: newOp = NeoOpSubGC
+					case NeoOpMul: newOp = NeoOpMulGC
+					case NeoOpDiv: newOp = NeoOpDivGC
+					case NeoOpEqual: newOp = NeoOpEqualGlobalConst
+					case NeoOpGreater: newOp = NeoOpGreaterGlobalConst
+					case NeoOpLess: newOp = NeoOpLessGlobalConst
+					case NeoOpConcat2: newOp = NeoOpConcatGC
+					}
+					if newOp != 0 {
+						c.instructions = c.instructions[:n-2]
+						return c.emit(newOp, (i1.Arg << 16) | i2.Arg)
+					}
+				}
+			}
+			if i1.Op == NeoOpPush && i2.Op == NeoOpGetGlobal {
+				if i1.Arg < 65536 && i2.Arg < 65536 {
+					newOp := NeoOpCode(0)
+					switch op {
+					case NeoOpAdd: newOp = NeoOpAddConstGlobal
+					case NeoOpSub: newOp = NeoOpSubCG
+					case NeoOpMul: newOp = NeoOpMulCG
+					case NeoOpDiv: newOp = NeoOpDivCG
+					case NeoOpEqual: newOp = NeoOpEqualGlobalConst
+					case NeoOpConcat2: newOp = NeoOpConcatCG
+					}
+					if newOp != 0 {
+						c.instructions = c.instructions[:n-2]
+						return c.emit(newOp, (i2.Arg << 16) | i1.Arg)
+					}
+				}
+			}
+			if i1.Op == NeoOpGetGlobal && i2.Op == NeoOpGetGlobal {
+				if i1.Arg < 65536 && i2.Arg < 65536 {
+					newOp := NeoOpCode(0)
+					switch op {
+					case NeoOpAdd: newOp = NeoOpAddGlobalGlobal
+					case NeoOpSub: newOp = NeoOpSubGlobalGlobal
+					case NeoOpMul: newOp = NeoOpMulGlobalGlobal
+					}
+					if newOp != 0 {
+						c.instructions = c.instructions[:n-2]
+						return c.emit(newOp, (i1.Arg << 16) | i2.Arg)
+					}
+				}
+			}
+			// Constant folding in emit (fallback)
+			if i1.Op == NeoOpPush && i2.Op == NeoOpPush {
+				c1 := c.constants[i1.Arg]
+				c2 := c.constants[i2.Arg]
+				res, ok := c.foldInfix(c1, c2, opToString(op))
+				if ok {
+					c.instructions = c.instructions[:n-2]
+					return c.emitPush(res)
+				}
+			}
+		}
+		// 2nd-order (OpC)
+		if n >= 1 {
+			prev := c.instructions[n-1]
+			if prev.Op == NeoOpPush {
+				newOp := NeoOpCode(0)
+				switch op {
+				case NeoOpAdd: newOp = NeoOpAddC
+				case NeoOpSub: newOp = NeoOpSubC
+				case NeoOpMul: newOp = NeoOpMulC
+				case NeoOpDiv: newOp = NeoOpDivC
+				case NeoOpEqual: newOp = NeoOpEqualC
+				case NeoOpGreater: newOp = NeoOpGreaterC
+				case NeoOpLess: newOp = NeoOpLessC
+				}
+				if newOp != 0 {
+					c.instructions[n-1] = neoInstruction{Op: newOp, Arg: prev.Arg}
+					return n - 1
+				}
+			}
+		}
+	}
+
+	// Final check for ADD following CONCAT
+	if op == NeoOpAdd && n > 0 && c.instructions[n-1].Op == NeoOpConcat {
+		c.instructions[n-1].Arg++
+		return n - 1
+	}
+
 	c.instructions = append(c.instructions, neoInstruction{Op: op, Arg: arg})
 	return len(c.instructions) - 1
+}
+
+func opToString(op NeoOpCode) string {
+	switch op {
+	case NeoOpAdd: return "+"
+	case NeoOpSub: return "-"
+	case NeoOpMul: return "*"
+	case NeoOpDiv: return "/"
+	case NeoOpEqual: return "=="
+	case NeoOpGreater: return ">"
+	case NeoOpLess: return "<"
+	case NeoOpGreaterEqual: return ">="
+	case NeoOpLessEqual: return "<="
+	case NeoOpMod: return "%"
+	}
+	return ""
 }
 
 func (c *NeoCompiler) emitPush(v Value) int { return c.emit(NeoOpPush, c.addConstant(v)) }
@@ -606,173 +747,129 @@ func neoIsOne(v Value) bool {
 }
 
 func (c *NeoCompiler) addConstant(v Value) int32 {
-	var key any
-	switch v.Type {
-	case ValInt: key = int64(v.Num)
-	case ValFloat: key = math.Float64frombits(v.Num)
-	case ValBool: key = v.Num != 0
-	case ValString: key = v.Str
-	case ValNil: key = nil
+	// Optimization: check first few constants linearly to avoid map overhead for tiny expressions
+	n := len(c.constants)
+	if n > 0 {
+		start := 0
+		if n > 16 { start = n - 16 }
+		for i := n - 1; i >= start; i-- {
+			if c.constants[i].Type == v.Type {
+				if v.Type == ValString {
+					if c.constants[i].Str == v.Str { return int32(i) }
+				} else if c.constants[i].Num == v.Num {
+					return int32(i)
+				}
+			}
+		}
 	}
-	if idx, ok := c.constMap[key]; ok { return idx }
-	idx := int32(len(c.constants)); c.constants = append(c.constants, v); c.constMap[key] = idx
+
+	switch v.Type {
+	case ValInt:
+		if idx, ok := c.constMapInt[int64(v.Num)]; ok { return idx }
+	case ValFloat:
+		if idx, ok := c.constMapFloat[v.Num]; ok { return idx }
+	case ValBool:
+		if idx, ok := c.constMapBool[v.Num != 0]; ok { return idx }
+	case ValString:
+		if idx, ok := c.constMapString[v.Str]; ok { return idx }
+	case ValNil:
+		if idx, ok := c.constMapOther[nil]; ok { return idx }
+	}
+
+	idx := int32(len(c.constants))
+	c.constants = append(c.constants, v)
+
+	switch v.Type {
+	case ValInt: c.constMapInt[int64(v.Num)] = idx
+	case ValFloat: c.constMapFloat[v.Num] = idx
+	case ValBool: c.constMapBool[v.Num != 0] = idx
+	case ValString: c.constMapString[v.Str] = idx
+	case ValNil: c.constMapOther[nil] = idx
+	}
 	return idx
+}
+
+var oldToNewPool = sync.Pool{
+	New: func() any { return make([]int, 0, 128) },
+}
+var newInstsPool = sync.Pool{
+	New: func() any { return make([]neoInstruction, 0, 128) },
 }
 
 func (c *NeoCompiler) peephole() {
 	if len(c.instructions) < 2 { return }
-	for {
-		changed := false
-		newInsts := make([]neoInstruction, 0, len(c.instructions))
-		oldToNew := make([]int, len(c.instructions)+1)
-		for i := 0; i < len(c.instructions); i++ {
-			oldToNew[i] = len(newInsts); inst := c.instructions[i]
-			if i+2 < len(c.instructions) && inst.Op == NeoOpPush && c.instructions[i+1].Op == NeoOpPush {
-				c1 := c.constants[inst.Arg]; c2 := c.constants[c.instructions[i+1].Arg]; op := c.instructions[i+2].Op
-				folded := false; var res Value
-				switch op {
-				case NeoOpAdd:
-					if c1.Type == ValInt && c2.Type == ValInt { res = Value{Type: ValInt, Num: c1.Num + c2.Num}; folded = true } else if c1.Type == ValString && c2.Type == ValString { res = Value{Type: ValString, Str: c1.Str + c2.Str}; folded = true }
-				case NeoOpSub:
-					if c1.Type == ValInt && c2.Type == ValInt { res = Value{Type: ValInt, Num: c1.Num - c2.Num}; folded = true }
-				case NeoOpMul:
-					if c1.Type == ValInt && c2.Type == ValInt { res = Value{Type: ValInt, Num: c1.Num * c2.Num}; folded = true }
-				}
-				if folded {
-					newIdx := c.addConstant(res); newInsts = append(newInsts, neoInstruction{Op: NeoOpPush, Arg: newIdx})
-					for k := 1; k <= 2; k++ { oldToNew[i+k] = len(newInsts) - 1 }; i += 2; changed = true; continue
-				}
-			}
-            // Specialized arithmetic for constants + variables (already handled by AddGC, but can refine if we know type)
-            // But we don't know variable type at compile time easily in one-pass.
-            
-			if i+3 < len(c.instructions) && inst.Op == NeoOpGetGlobal && c.instructions[i+1].Op == NeoOpPush && (c.instructions[i+2].Op == NeoOpEqual || c.instructions[i+2].Op == NeoOpGreater || c.instructions[i+2].Op == NeoOpLess) && c.instructions[i+3].Op == NeoOpJumpIfFalse {
-				gIdx := inst.Arg; cIdx := c.instructions[i+1].Arg; jTarget := c.instructions[i+3].Arg
-				if gIdx < 1024 && cIdx < 1024 && jTarget < 4096 {
-					op := NeoOpCode(0)
-					switch c.instructions[i+2].Op {
-					case NeoOpEqual: op = NeoOpFusedCompareGlobalConstJumpIfFalse
-					case NeoOpGreater: op = NeoOpFusedGreaterGlobalConstJumpIfFalse
-					case NeoOpLess: op = NeoOpFusedLessGlobalConstJumpIfFalse
-					}
-					if op != 0 {
-						fusedArg := (gIdx << 22) | (cIdx << 12) | jTarget; newInsts = append(newInsts, neoInstruction{Op: op, Arg: fusedArg})
-						for k := 1; k <= 3; k++ { oldToNew[i+k] = len(newInsts) - 1 }; i += 3; changed = true; continue
-					}
-				}
-			}
-			if i+2 < len(c.instructions) && inst.Op == NeoOpGetGlobal && c.instructions[i+1].Op == NeoOpPush {
-				gIdx := inst.Arg; cIdx := c.instructions[i+1].Arg
-				if gIdx < 65536 && cIdx < 65536 {
-					op := NeoOpCode(0)
-					switch c.instructions[i+2].Op {
-					case NeoOpAdd: op = NeoOpAddGC
-					case NeoOpSub: op = NeoOpSubGC
-					case NeoOpMul: op = NeoOpMulGC
-					case NeoOpDiv: op = NeoOpDivGC
-					case NeoOpEqual: op = NeoOpEqualGlobalConst
-					case NeoOpGreater: op = NeoOpGreaterGlobalConst
-					case NeoOpLess: op = NeoOpLessGlobalConst
-					case NeoOpConcat2: op = NeoOpConcatGC
-					}
-					if op != 0 {
-						newInsts = append(newInsts, neoInstruction{Op: op, Arg: (gIdx << 16) | cIdx})
-						for k := 1; k <= 2; k++ { oldToNew[i+k] = len(newInsts) - 1 }; i += 2; changed = true; continue
-					}
-				}
-			}
-			if i+2 < len(c.instructions) && inst.Op == NeoOpPush && c.instructions[i+1].Op == NeoOpGetGlobal {
-				cIdx := inst.Arg; gIdx := c.instructions[i+1].Arg
-				if cIdx < 65536 && gIdx < 65536 {
-					op := NeoOpCode(0)
-					switch c.instructions[i+2].Op {
-					case NeoOpAdd: op = NeoOpAddConstGlobal
-					case NeoOpSub: op = NeoOpSubCG
-					case NeoOpMul: op = NeoOpMulCG
-					case NeoOpDiv: op = NeoOpDivCG
-					case NeoOpEqual: op = NeoOpEqualGlobalConst
-					case NeoOpConcat2: op = NeoOpConcatCG
-					}
-					if op != 0 {
-						newInsts = append(newInsts, neoInstruction{Op: op, Arg: (gIdx << 16) | cIdx})
-						for k := 1; k <= 2; k++ { oldToNew[i+k] = len(newInsts) - 1 }; i += 2; changed = true; continue
-					}
-				}
-			}
-			if i+1 < len(c.instructions) && inst.Op == NeoOpPush {
-				cIdx := inst.Arg; op := NeoOpCode(0); 
-				switch c.instructions[i+1].Op {
-				case NeoOpAdd: op = NeoOpAddC
-				case NeoOpSub: op = NeoOpSubC
-				case NeoOpMul: op = NeoOpMulC
-				case NeoOpDiv: op = NeoOpDivC
-				case NeoOpEqual: op = NeoOpEqualC
-				case NeoOpGreater: op = NeoOpGreaterC
-				case NeoOpLess: op = NeoOpLessC
-				}
-				if op != 0 {
-					newInsts = append(newInsts, neoInstruction{Op: op, Arg: cIdx})
-					oldToNew[i+1] = len(newInsts) - 1; i += 1; changed = true; continue
-				}
-			}
-			if i+2 < len(c.instructions) && inst.Op == NeoOpGetGlobal && c.instructions[i+1].Op == NeoOpGetGlobal {
-				g1Idx := inst.Arg; g2Idx := c.instructions[i+1].Arg
-				if g1Idx < 65536 && g2Idx < 65536 {
-					op := NeoOpCode(0)
-					switch c.instructions[i+2].Op {
-					case NeoOpAdd: op = NeoOpAddGlobalGlobal
-					case NeoOpSub: op = NeoOpSubGlobalGlobal
-					case NeoOpMul: op = NeoOpMulGlobalGlobal
-					}
-					if op != 0 {
-						newInsts = append(newInsts, neoInstruction{Op: op, Arg: (g1Idx << 16) | g2Idx})
-						for k := 1; k <= 2; k++ { oldToNew[i+k] = len(newInsts) - 1 }; i += 2; changed = true; continue
-					}
-				}
-			}
-			if i+1 < len(c.instructions) && inst.Op == NeoOpGetGlobal {
-				gIdx := inst.Arg; jTarget := c.instructions[i+1].Arg
-				if gIdx < 65536 && jTarget < 65536 {
-					op := NeoOpCode(0)
-					switch c.instructions[i+1].Op {
-					case NeoOpJumpIfFalse: op = NeoOpGetGlobalJumpIfFalse
-					case NeoOpJumpIfTrue: op = NeoOpGetGlobalJumpIfTrue
-					}
-					if op != 0 {
-						newInsts = append(newInsts, neoInstruction{Op: op, Arg: (gIdx << 16) | jTarget})
-						oldToNew[i+1] = len(newInsts) - 1; i += 1; changed = true; continue
-					}
-				}
-			}
-			newInsts = append(newInsts, inst)
-		}
-		oldToNew[len(c.instructions)] = len(newInsts)
-		for i := range newInsts {
-			switch newInsts[i].Op {
-			case NeoOpJump, NeoOpJumpIfFalse, NeoOpJumpIfTrue: newInsts[i].Arg = int32(oldToNew[newInsts[i].Arg])
-			case NeoOpFusedCompareGlobalConstJumpIfFalse, NeoOpFusedGreaterGlobalConstJumpIfFalse, NeoOpFusedLessGlobalConstJumpIfFalse:
-				gIdx := (newInsts[i].Arg >> 22) & 0x3FF; cIdx := (newInsts[i].Arg >> 12) & 0x3FF; jTarget := newInsts[i].Arg & 0xFFF
-				newInsts[i].Arg = (gIdx << 22) | (cIdx << 12) | int32(oldToNew[jTarget])
-			case NeoOpGetGlobalJumpIfFalse, NeoOpGetGlobalJumpIfTrue:
-				gIdx := newInsts[i].Arg >> 16; jTarget := newInsts[i].Arg & 0xFFFF
-				newInsts[i].Arg = (gIdx << 16) | int32(oldToNew[jTarget])
-			}
-		}
-		c.instructions = newInsts
-		if !changed { break }
+
+	// Single pass for jump fusions, as others are handled online in emit.
+	// This reduces complexity and allocations while maintaining safety.
+	newInsts := newInstsPool.Get().([]neoInstruction)[:0]
+	oldToNew := oldToNewPool.Get().([]int)[:0]
+	if cap(oldToNew) < len(c.instructions)+1 {
+		oldToNew = make([]int, 0, len(c.instructions)+1)
 	}
-	if len(c.instructions) >= 2 {
-		finalInsts := make([]neoInstruction, 0, len(c.instructions))
-		for i := 0; i < len(c.instructions); i++ {
-			inst := c.instructions[i]
-			if inst.Op == NeoOpAdd && len(finalInsts) > 0 {
-				lastIdx := len(finalInsts) - 1
-				if finalInsts[lastIdx].Op == NeoOpConcat { finalInsts[lastIdx].Arg++; continue }
+
+	for i := 0; i < len(c.instructions); i++ {
+		oldToNew = append(oldToNew, len(newInsts))
+		inst := c.instructions[i]
+
+		// Catch remaining jump fusions (FCG, GGJ)
+		if i+1 < len(c.instructions) {
+			next := c.instructions[i+1]
+			if next.Op == NeoOpJumpIfFalse {
+				jTarget := next.Arg
+				if jTarget < 4096 {
+					switch inst.Op {
+					case NeoOpEqualGlobalConst, NeoOpGreaterGlobalConst, NeoOpLessGlobalConst:
+						gIdx := inst.Arg >> 16; cIdx := inst.Arg & 0xFFFF
+						if gIdx < 1024 && cIdx < 1024 {
+							newOp := NeoOpCode(0)
+							switch inst.Op {
+							case NeoOpEqualGlobalConst: newOp = NeoOpFusedCompareGlobalConstJumpIfFalse
+							case NeoOpGreaterGlobalConst: newOp = NeoOpFusedGreaterGlobalConstJumpIfFalse
+							case NeoOpLessGlobalConst: newOp = NeoOpFusedLessGlobalConstJumpIfFalse
+							}
+							newInsts = append(newInsts, neoInstruction{Op: newOp, Arg: (gIdx << 22) | (cIdx << 12) | jTarget})
+							oldToNew = append(oldToNew, len(newInsts)-1)
+							i++; continue
+						}
+					case NeoOpGetGlobal:
+						if inst.Arg < 65536 && jTarget < 65536 {
+							newInsts = append(newInsts, neoInstruction{Op: NeoOpGetGlobalJumpIfFalse, Arg: (inst.Arg << 16) | jTarget})
+							oldToNew = append(oldToNew, len(newInsts)-1)
+							i++; continue
+						}
+					}
+				}
+			} else if next.Op == NeoOpJumpIfTrue {
+				jTarget := next.Arg
+				if inst.Op == NeoOpGetGlobal && inst.Arg < 65536 && jTarget < 65536 {
+					newInsts = append(newInsts, neoInstruction{Op: NeoOpGetGlobalJumpIfTrue, Arg: (inst.Arg << 16) | jTarget})
+					oldToNew = append(oldToNew, len(newInsts)-1)
+					i++; continue
+				}
 			}
-			finalInsts = append(finalInsts, inst)
 		}
-		c.instructions = finalInsts
+		newInsts = append(newInsts, inst)
 	}
+	oldToNew = append(oldToNew, len(newInsts))
+
+	// Update jump targets
+	for i := range newInsts {
+		switch newInsts[i].Op {
+		case NeoOpJump, NeoOpJumpIfFalse, NeoOpJumpIfTrue:
+			newInsts[i].Arg = int32(oldToNew[newInsts[i].Arg])
+		case NeoOpFusedCompareGlobalConstJumpIfFalse, NeoOpFusedGreaterGlobalConstJumpIfFalse, NeoOpFusedLessGlobalConstJumpIfFalse:
+			gIdx := (newInsts[i].Arg >> 22) & 0x3FF; cIdx := (newInsts[i].Arg >> 12) & 0x3FF; jTarget := newInsts[i].Arg & 0xFFF
+			newInsts[i].Arg = (gIdx << 22) | (cIdx << 12) | int32(oldToNew[jTarget])
+		case NeoOpGetGlobalJumpIfFalse, NeoOpGetGlobalJumpIfTrue:
+			gIdx := newInsts[i].Arg >> 16; jTarget := newInsts[i].Arg & 0xFFFF
+			newInsts[i].Arg = (gIdx << 16) | int32(oldToNew[jTarget])
+		}
+	}
+
+	c.instructions = make([]neoInstruction, len(newInsts))
+	copy(c.instructions, newInsts)
+	newInstsPool.Put(newInsts)
+	oldToNewPool.Put(oldToNew)
 }
 
 
