@@ -32,7 +32,6 @@ func RunNeoVMWithMap(bc *NeoBytecode, vars map[string]any) (any, error) {
 
 	pInsts := unsafe.SliceData(insts)
 	pConsts := unsafe.SliceData(bc.Constants)
-	pNames := unsafe.SliceData(bc.Names)
 
 	sp := -1
 	pc := 0
@@ -61,9 +60,6 @@ func RunNeoVMWithMap(bc *NeoBytecode, vars map[string]any) (any, error) {
 		case NeoOpDiv:
 			rv := stack[sp]; sp--; l := &stack[sp]
 			res, err := l.DivErr(rv); if err != nil { return nil, err }; *l = res
-		case NeoOpMod:
-			rv := stack[sp]; sp--; l := &stack[sp]
-			res, err := l.ModErr(rv); if err != nil { return nil, err }; *l = res
 		case NeoOpEqual:
 			rv := stack[sp]; sp--; l := &stack[sp]
 			*l = Value{Type: ValBool, Num: boolToUint64(l.Equal(rv))}
@@ -73,21 +69,6 @@ func RunNeoVMWithMap(bc *NeoBytecode, vars map[string]any) (any, error) {
 		case NeoOpLess:
 			rv := stack[sp]; sp--; l := &stack[sp]
 			*l = Value{Type: ValBool, Num: boolToUint64(rv.Greater(*l))}
-		case NeoOpGreaterEqual:
-			rv := stack[sp]; sp--; l := &stack[sp]
-			*l = Value{Type: ValBool, Num: boolToUint64(l.Greater(rv) || l.Equal(rv))}
-		case NeoOpLessEqual:
-			rv := stack[sp]; sp--; l := &stack[sp]
-			*l = Value{Type: ValBool, Num: boolToUint64(rv.Greater(*l) || l.Equal(rv))}
-		case NeoOpAnd:
-			rv := stack[sp]; sp--; l := &stack[sp]
-			*l = Value{Type: ValBool, Num: boolToUint64(isValTruthy(*l) && isValTruthy(rv))}
-		case NeoOpOr:
-			rv := stack[sp]; sp--; l := &stack[sp]
-			*l = Value{Type: ValBool, Num: boolToUint64(isValTruthy(*l) || isValTruthy(rv))}
-		case NeoOpNot:
-			l := &stack[sp]
-			*l = Value{Type: ValBool, Num: boolToUint64(!isValTruthy(*l))}
 		case NeoOpJump: pc = int(inst.Arg)
 		case NeoOpJumpIfFalse:
 			l := stack[sp]; sp--
@@ -97,7 +78,7 @@ func RunNeoVMWithMap(bc *NeoBytecode, vars map[string]any) (any, error) {
 			if isValTruthy(l) { pc = int(inst.Arg) }
 		case NeoOpGetGlobal:
 			sp++; if sp >= 64 { return nil, fmt.Errorf("NeoVM stack overflow") }
-			name := *(*string)(unsafe.Add(unsafe.Pointer(pNames), uintptr(inst.Arg)*unsafe.Sizeof("")))
+			name := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(inst.Arg)*valSize)).Str
 			val := vars[name]
 			target := &stack[sp]
 			switch v := val.(type) {
@@ -110,7 +91,7 @@ func RunNeoVMWithMap(bc *NeoBytecode, vars map[string]any) (any, error) {
 			default: *target = FromInterface(v)
 			}
 		case NeoOpSetGlobal:
-			name := *(*string)(unsafe.Add(unsafe.Pointer(pNames), uintptr(inst.Arg)*unsafe.Sizeof("")))
+			name := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(inst.Arg)*valSize)).Str
 			vars[name] = stack[sp].ToInterface()
 		case NeoOpEqualConst, NeoOpEqualC:
 			cv := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(inst.Arg)*valSize))
@@ -126,7 +107,7 @@ func RunNeoVMWithMap(bc *NeoBytecode, vars map[string]any) (any, error) {
 			*l = Value{Type: ValBool, Num: boolToUint64(cv.Greater(*l))}
 		case NeoOpEqualGlobalConst:
 			gIdx := inst.Arg >> 16; cIdx := inst.Arg & 0xFFFF
-			name := *(*string)(unsafe.Add(unsafe.Pointer(pNames), uintptr(gIdx)*unsafe.Sizeof("")))
+			name := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(gIdx)*valSize)).Str
 			cv := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(cIdx)*valSize))
 			val := vars[name]
 			res := false
@@ -141,7 +122,7 @@ func RunNeoVMWithMap(bc *NeoBytecode, vars map[string]any) (any, error) {
 		case NeoOpAddGlobal, NeoOpAddGC:
 			gIdx := inst.Arg >> 16; cIdx := inst.Arg & 0xFFFF; sp++
 			if sp >= 64 { return nil, fmt.Errorf("NeoVM stack overflow") }
-			name := *(*string)(unsafe.Add(unsafe.Pointer(pNames), uintptr(gIdx)*unsafe.Sizeof("")))
+			name := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(gIdx)*valSize)).Str
 			cv := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(cIdx)*valSize))
 			val := vars[name]
 			target := &stack[sp]
@@ -157,49 +138,49 @@ func RunNeoVMWithMap(bc *NeoBytecode, vars map[string]any) (any, error) {
 		case NeoOpAddConstGlobal:
 			gIdx := inst.Arg >> 16; cIdx := inst.Arg & 0xFFFF; sp++
 			if sp >= 64 { return nil, fmt.Errorf("NeoVM stack overflow") }
-			name := *(*string)(unsafe.Add(unsafe.Pointer(pNames), uintptr(gIdx)*unsafe.Sizeof("")))
+			name := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(gIdx)*valSize)).Str
 			cv := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(cIdx)*valSize))
 			stack[sp] = AddAny(cv.ToInterface(), vars[name])
 		case NeoOpSubGC:
 			gIdx := inst.Arg >> 16; cIdx := inst.Arg & 0xFFFF; sp++
 			if sp >= 64 { return nil, fmt.Errorf("NeoVM stack overflow") }
-			name := *(*string)(unsafe.Add(unsafe.Pointer(pNames), uintptr(gIdx)*unsafe.Sizeof("")))
+			name := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(gIdx)*valSize)).Str
 			cv := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(cIdx)*valSize))
 			stack[sp] = SubAny(vars[name], cv.ToInterface())
 		case NeoOpMulGC:
 			gIdx := inst.Arg >> 16; cIdx := inst.Arg & 0xFFFF; sp++
 			if sp >= 64 { return nil, fmt.Errorf("NeoVM stack overflow") }
-			name := *(*string)(unsafe.Add(unsafe.Pointer(pNames), uintptr(gIdx)*unsafe.Sizeof("")))
+			name := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(gIdx)*valSize)).Str
 			cv := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(cIdx)*valSize))
 			stack[sp] = MulAny(vars[name], cv.ToInterface())
 		case NeoOpDivGC:
 			gIdx := inst.Arg >> 16; cIdx := inst.Arg & 0xFFFF; sp++
 			if sp >= 64 { return nil, fmt.Errorf("NeoVM stack overflow") }
-			name := *(*string)(unsafe.Add(unsafe.Pointer(pNames), uintptr(gIdx)*unsafe.Sizeof("")))
+			name := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(gIdx)*valSize)).Str
 			cv := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(cIdx)*valSize))
 			stack[sp] = DivAny(vars[name], cv.ToInterface())
 		case NeoOpSubCG:
 			gIdx := inst.Arg >> 16; cIdx := inst.Arg & 0xFFFF; sp++
 			if sp >= 64 { return nil, fmt.Errorf("NeoVM stack overflow") }
-			name := *(*string)(unsafe.Add(unsafe.Pointer(pNames), uintptr(gIdx)*unsafe.Sizeof("")))
+			name := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(gIdx)*valSize)).Str
 			cv := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(cIdx)*valSize))
 			stack[sp] = SubAny(cv.ToInterface(), vars[name])
 		case NeoOpMulCG:
 			gIdx := inst.Arg >> 16; cIdx := inst.Arg & 0xFFFF; sp++
 			if sp >= 64 { return nil, fmt.Errorf("NeoVM stack overflow") }
-			name := *(*string)(unsafe.Add(unsafe.Pointer(pNames), uintptr(gIdx)*unsafe.Sizeof("")))
+			name := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(gIdx)*valSize)).Str
 			cv := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(cIdx)*valSize))
 			stack[sp] = MulAny(cv.ToInterface(), vars[name])
 		case NeoOpDivCG:
 			gIdx := inst.Arg >> 16; cIdx := inst.Arg & 0xFFFF; sp++
 			if sp >= 64 { return nil, fmt.Errorf("NeoVM stack overflow") }
-			name := *(*string)(unsafe.Add(unsafe.Pointer(pNames), uintptr(gIdx)*unsafe.Sizeof("")))
+			name := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(gIdx)*valSize)).Str
 			cv := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(cIdx)*valSize))
 			stack[sp] = DivAny(cv.ToInterface(), vars[name])
 		case NeoOpGreaterGlobalConst:
 			gIdx := inst.Arg >> 16; cIdx := inst.Arg & 0xFFFF; sp++
 			if sp >= 64 { return nil, fmt.Errorf("NeoVM stack overflow") }
-			name := *(*string)(unsafe.Add(unsafe.Pointer(pNames), uintptr(gIdx)*unsafe.Sizeof("")))
+			name := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(gIdx)*valSize)).Str
 			cv := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(cIdx)*valSize))
 			val := vars[name]
 			res := false
@@ -214,7 +195,7 @@ func RunNeoVMWithMap(bc *NeoBytecode, vars map[string]any) (any, error) {
 		case NeoOpLessGlobalConst:
 			gIdx := inst.Arg >> 16; cIdx := inst.Arg & 0xFFFF; sp++
 			if sp >= 64 { return nil, fmt.Errorf("NeoVM stack overflow") }
-			name := *(*string)(unsafe.Add(unsafe.Pointer(pNames), uintptr(gIdx)*unsafe.Sizeof("")))
+			name := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(gIdx)*valSize)).Str
 			cv := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(cIdx)*valSize))
 			val := vars[name]
 			res := false
@@ -229,8 +210,8 @@ func RunNeoVMWithMap(bc *NeoBytecode, vars map[string]any) (any, error) {
 		case NeoOpAddGlobalGlobal:
 			g1Idx := inst.Arg >> 16; g2Idx := inst.Arg & 0xFFFF; sp++
 			if sp >= 64 { return nil, fmt.Errorf("NeoVM stack overflow") }
-			n1 := *(*string)(unsafe.Add(unsafe.Pointer(pNames), uintptr(g1Idx)*unsafe.Sizeof("")))
-			n2 := *(*string)(unsafe.Add(unsafe.Pointer(pNames), uintptr(g2Idx)*unsafe.Sizeof("")))
+			n1 := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(g1Idx)*valSize)).Str
+			n2 := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(g2Idx)*valSize)).Str
 			v1 := vars[n1]; v2 := vars[n2]
 			if i1, ok1 := v1.(int64); ok1 {
 				if i2, ok2 := v2.(int64); ok2 { stack[sp] = Value{Type: ValInt, Num: uint64(i1 + i2)}; continue }
@@ -239,8 +220,8 @@ func RunNeoVMWithMap(bc *NeoBytecode, vars map[string]any) (any, error) {
 		case NeoOpSubGlobalGlobal:
 			g1Idx := inst.Arg >> 16; g2Idx := inst.Arg & 0xFFFF; sp++
 			if sp >= 64 { return nil, fmt.Errorf("NeoVM stack overflow") }
-			n1 := *(*string)(unsafe.Add(unsafe.Pointer(pNames), uintptr(g1Idx)*unsafe.Sizeof("")))
-			n2 := *(*string)(unsafe.Add(unsafe.Pointer(pNames), uintptr(g2Idx)*unsafe.Sizeof("")))
+			n1 := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(g1Idx)*valSize)).Str
+			n2 := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(g2Idx)*valSize)).Str
 			v1 := vars[n1]; v2 := vars[n2]
 			if i1, ok1 := v1.(int64); ok1 {
 				if i2, ok2 := v2.(int64); ok2 { stack[sp] = Value{Type: ValInt, Num: uint64(i1 - i2)}; continue }
@@ -249,8 +230,8 @@ func RunNeoVMWithMap(bc *NeoBytecode, vars map[string]any) (any, error) {
 		case NeoOpMulGlobalGlobal:
 			g1Idx := inst.Arg >> 16; g2Idx := inst.Arg & 0xFFFF; sp++
 			if sp >= 64 { return nil, fmt.Errorf("NeoVM stack overflow") }
-			n1 := *(*string)(unsafe.Add(unsafe.Pointer(pNames), uintptr(g1Idx)*unsafe.Sizeof("")))
-			n2 := *(*string)(unsafe.Add(unsafe.Pointer(pNames), uintptr(g2Idx)*unsafe.Sizeof("")))
+			n1 := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(g1Idx)*valSize)).Str
+			n2 := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(g2Idx)*valSize)).Str
 			v1 := vars[n1]; v2 := vars[n2]
 			if i1, ok1 := v1.(int64); ok1 {
 				if i2, ok2 := v2.(int64); ok2 { stack[sp] = Value{Type: ValInt, Num: uint64(i1 * i2)}; continue }
@@ -258,7 +239,7 @@ func RunNeoVMWithMap(bc *NeoBytecode, vars map[string]any) (any, error) {
 			stack[sp] = MulAny(v1, v2)
 		case NeoOpFusedCompareGlobalConstJumpIfFalse:
 			gIdx := int(inst.Arg >> 22) & 0x3FF; cIdx := int(inst.Arg >> 12) & 0x3FF; jTarget := int(inst.Arg) & 0xFFF
-			name := *(*string)(unsafe.Add(unsafe.Pointer(pNames), uintptr(gIdx)*unsafe.Sizeof("")))
+			name := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(gIdx)*valSize)).Str
 			cv := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(cIdx)*valSize))
 			val := vars[name]; res := false
 			switch v := val.(type) {
@@ -270,7 +251,7 @@ func RunNeoVMWithMap(bc *NeoBytecode, vars map[string]any) (any, error) {
 			if !res { pc = jTarget }
 		case NeoOpFusedGreaterGlobalConstJumpIfFalse:
 			gIdx := int(inst.Arg >> 22) & 0x3FF; cIdx := int(inst.Arg >> 12) & 0x3FF; jTarget := int(inst.Arg) & 0xFFF
-			name := *(*string)(unsafe.Add(unsafe.Pointer(pNames), uintptr(gIdx)*unsafe.Sizeof("")))
+			name := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(gIdx)*valSize)).Str
 			cv := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(cIdx)*valSize))
 			val := vars[name]; res := false
 			switch v := val.(type) {
@@ -283,7 +264,7 @@ func RunNeoVMWithMap(bc *NeoBytecode, vars map[string]any) (any, error) {
 			if !res { pc = jTarget }
 		case NeoOpFusedLessGlobalConstJumpIfFalse:
 			gIdx := int(inst.Arg >> 22) & 0x3FF; cIdx := int(inst.Arg >> 12) & 0x3FF; jTarget := int(inst.Arg) & 0xFFF
-			name := *(*string)(unsafe.Add(unsafe.Pointer(pNames), uintptr(gIdx)*unsafe.Sizeof("")))
+			name := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(gIdx)*valSize)).Str
 			cv := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(cIdx)*valSize))
 			val := vars[name]; res := false
 			switch v := val.(type) {
@@ -296,11 +277,11 @@ func RunNeoVMWithMap(bc *NeoBytecode, vars map[string]any) (any, error) {
 			if !res { pc = jTarget }
 		case NeoOpGetGlobalJumpIfFalse:
 			gIdx := inst.Arg >> 16; jTarget := inst.Arg & 0xFFFF
-			name := *(*string)(unsafe.Add(unsafe.Pointer(pNames), uintptr(gIdx)*unsafe.Sizeof("")))
+			name := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(gIdx)*valSize)).Str
 			if !isTruthy(vars[name]) { pc = int(jTarget) }
 		case NeoOpGetGlobalJumpIfTrue:
 			gIdx := inst.Arg >> 16; jTarget := inst.Arg & 0xFFFF
-			name := *(*string)(unsafe.Add(unsafe.Pointer(pNames), uintptr(gIdx)*unsafe.Sizeof("")))
+			name := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(gIdx)*valSize)).Str
 			if isTruthy(vars[name]) { pc = int(jTarget) }
 		case NeoOpAddC:
 			l := &stack[sp]
@@ -356,7 +337,7 @@ func RunNeoVMWithMap(bc *NeoBytecode, vars map[string]any) (any, error) {
 		case NeoOpConcatGC:
 			gIdx := inst.Arg >> 16; cIdx := inst.Arg & 0xFFFF; sp++
 			if sp >= 64 { return nil, fmt.Errorf("NeoVM stack overflow") }
-			name := *(*string)(unsafe.Add(unsafe.Pointer(pNames), uintptr(gIdx)*unsafe.Sizeof("")))
+			name := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(gIdx)*valSize)).Str
 			cv := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(cIdx)*valSize))
 			lv := vars[name]; var s1, s2 string
 			if s, ok := lv.(string); ok { s1 = s } else { s1 = fmt.Sprintf("%v", lv) }
@@ -365,7 +346,7 @@ func RunNeoVMWithMap(bc *NeoBytecode, vars map[string]any) (any, error) {
 		case NeoOpConcatCG:
 			gIdx := inst.Arg >> 16; cIdx := inst.Arg & 0xFFFF; sp++
 			if sp >= 64 { return nil, fmt.Errorf("NeoVM stack overflow") }
-			name := *(*string)(unsafe.Add(unsafe.Pointer(pNames), uintptr(gIdx)*unsafe.Sizeof("")))
+			name := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(gIdx)*valSize)).Str
 			cv := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(cIdx)*valSize))
 			rv := vars[name]; var s1, s2 string
 			if cv.Type == ValString { s1 = cv.Str } else { s1 = fmt.Sprintf("%v", cv.ToInterface()) }
@@ -373,7 +354,7 @@ func RunNeoVMWithMap(bc *NeoBytecode, vars map[string]any) (any, error) {
 			stack[sp] = Value{Type: ValString, Str: s1 + s2}
 		case NeoOpCall:
 			nameIdx := inst.Arg & 0xFFFF; numArgs := int(inst.Arg >> 16)
-			name := *(*string)(unsafe.Add(unsafe.Pointer(pNames), uintptr(nameIdx)*unsafe.Sizeof("")))
+			name := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(nameIdx)*valSize)).Str
 			var argsBuf [8]any; var args []any
 			if numArgs <= 8 { args = argsBuf[:numArgs] } else { args = make([]any, numArgs) }
 			for i := numArgs - 1; i >= 0; i-- {
@@ -388,11 +369,38 @@ func RunNeoVMWithMap(bc *NeoBytecode, vars map[string]any) (any, error) {
 			if sp < 0 { return nil, nil }
 			return stack[sp].ToInterface(), nil
 		default:
-			return nil, fmt.Errorf("unsupported NeoVM opcode: %v", inst.Op)
+			res, err := runNeoVMWithMapFallback(inst, &stack, &sp, &pc, pConsts, vars)
+			if err != nil { return nil, err }
+			if inst.Op == NeoOpReturn { return res, nil }
 		}
 	}
 	if sp < 0 { return nil, nil }
 	return stack[sp].ToInterface(), nil
+}
+
+func runNeoVMWithMapFallback(inst *neoInstruction, stack *[64]Value, sp *int, pc *int, pConsts *Value, vars map[string]any) (any, error) {
+	const valSize = unsafe.Sizeof(Value{})
+	switch inst.Op {
+	case NeoOpGreaterEqual:
+		rv := stack[*sp]; *sp--; l := &stack[*sp]
+		*l = Value{Type: ValBool, Num: boolToUint64(l.Greater(rv) || l.Equal(rv))}
+	case NeoOpLessEqual:
+		rv := stack[*sp]; *sp--; l := &stack[*sp]
+		*l = Value{Type: ValBool, Num: boolToUint64(rv.Greater(*l) || l.Equal(rv))}
+	case NeoOpAnd:
+		rv := stack[*sp]; *sp--; l := &stack[*sp]
+		*l = Value{Type: ValBool, Num: boolToUint64(isValTruthy(*l) && isValTruthy(rv))}
+	case NeoOpOr:
+		rv := stack[*sp]; *sp--; l := &stack[*sp]
+		*l = Value{Type: ValBool, Num: boolToUint64(isValTruthy(*l) || isValTruthy(rv))}
+	case NeoOpNot:
+		l := &stack[*sp]
+		*l = Value{Type: ValBool, Num: boolToUint64(!isValTruthy(*l))}
+	case NeoOpMod:
+		rv := stack[*sp]; *sp--; l := &stack[*sp]
+		res, err := l.ModErr(rv); if err != nil { return nil, err }; *l = res
+	}
+	return nil, nil
 }
 
 func runNeoVMGeneral(bc *NeoBytecode, ctx Context) (any, error) {
@@ -400,14 +408,13 @@ func runNeoVMGeneral(bc *NeoBytecode, ctx Context) (any, error) {
 	insts := bc.Instructions
 	nInsts := len(insts)
 	if nInsts == 0 { return nil, nil }
-	
+
 	pInsts := unsafe.SliceData(insts)
 	pConsts := unsafe.SliceData(bc.Constants)
-	pNames := unsafe.SliceData(bc.Names)
-	
+
 	sp := -1
 	pc := 0
-	
+
 	const valSize = unsafe.Sizeof(Value{})
 	const instSize = unsafe.Sizeof(neoInstruction{})
 
@@ -433,9 +440,6 @@ func runNeoVMGeneral(bc *NeoBytecode, ctx Context) (any, error) {
 		case NeoOpDiv:
 			rv := stack[sp]; sp--; l := &stack[sp]
 			*l = l.Div(rv)
-		case NeoOpMod:
-			rv := stack[sp]; sp--; l := &stack[sp]
-			res, err := l.ModErr(rv); if err != nil { return nil, err }; *l = res
 		case NeoOpEqual:
 			rv := stack[sp]; sp--; l := &stack[sp]
 			*l = Value{Type: ValBool, Num: boolToUint64(l.Equal(rv))}
@@ -445,232 +449,208 @@ func runNeoVMGeneral(bc *NeoBytecode, ctx Context) (any, error) {
 		case NeoOpLess:
 			rv := stack[sp]; sp--; l := &stack[sp]
 			*l = Value{Type: ValBool, Num: boolToUint64(rv.Greater(*l))}
-		case NeoOpGreaterEqual:
-			rv := stack[sp]; sp--; l := &stack[sp]
-			*l = Value{Type: ValBool, Num: boolToUint64(l.Greater(rv) || l.Equal(rv))}
-		case NeoOpLessEqual:
-			rv := stack[sp]; sp--; l := &stack[sp]
-			*l = Value{Type: ValBool, Num: boolToUint64(rv.Greater(*l) || l.Equal(rv))}
-		case NeoOpAnd:
-			rv := stack[sp]; sp--; l := &stack[sp]
-			*l = Value{Type: ValBool, Num: boolToUint64(isValTruthy(*l) && isValTruthy(rv))}
-		case NeoOpOr:
-			rv := stack[sp]; sp--; l := &stack[sp]
-			*l = Value{Type: ValBool, Num: boolToUint64(isValTruthy(*l) || isValTruthy(rv))}
-		case NeoOpNot:
-			l := &stack[sp]
-			*l = Value{Type: ValBool, Num: boolToUint64(!isValTruthy(*l))}
 		case NeoOpJump: pc = int(inst.Arg)
 		case NeoOpJumpIfFalse:
 			l := stack[sp]; sp--
 			if !isValTruthy(l) { pc = int(inst.Arg) }
-		case NeoOpJumpIfTrue:
-			l := stack[sp]; sp--
-			if isValTruthy(l) { pc = int(inst.Arg) }
 		case NeoOpGetGlobal:
-			name := *(*string)(unsafe.Add(unsafe.Pointer(pNames), uintptr(inst.Arg)*unsafe.Sizeof("")))
+			name := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(inst.Arg)*valSize)).Str
 			val, _ := ctx.Get(name); sp++
 			if sp >= 64 { return nil, fmt.Errorf("NeoVM stack overflow") }
 			stack[sp] = FromInterface(val)
 		case NeoOpSetGlobal:
-			name := *(*string)(unsafe.Add(unsafe.Pointer(pNames), uintptr(inst.Arg)*unsafe.Sizeof("")))
+			name := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(inst.Arg)*valSize)).Str
 			ctx.Set(name, stack[sp].ToInterface())
 		case NeoOpReturn:
 			if sp < 0 { return nil, nil }
 			return stack[sp].ToInterface(), nil
-		case NeoOpEqualConst, NeoOpEqualC:
-			cv := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(inst.Arg)*valSize))
-			l := &stack[sp]
-			*l = Value{Type: ValBool, Num: boolToUint64(l.Equal(*cv))}
-		case NeoOpGreaterC:
-			cv := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(inst.Arg)*valSize))
-			l := &stack[sp]
-			*l = Value{Type: ValBool, Num: boolToUint64(l.Greater(*cv))}
-		case NeoOpLessC:
-			cv := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(inst.Arg)*valSize))
-			l := &stack[sp]
-			*l = Value{Type: ValBool, Num: boolToUint64(cv.Greater(*l))}
-		case NeoOpEqualGlobalConst:
-			gIdx := inst.Arg >> 16; cIdx := inst.Arg & 0xFFFF
-			name := *(*string)(unsafe.Add(unsafe.Pointer(pNames), uintptr(gIdx)*unsafe.Sizeof("")))
-			cv := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(cIdx)*valSize))
-			val, _ := ctx.Get(name)
-			sp++; if sp >= 64 { return nil, fmt.Errorf("NeoVM stack overflow") }
-			stack[sp] = Value{Type: ValBool, Num: boolToUint64(EqualAny(val, cv.ToInterface()))}
-		case NeoOpAddGlobal, NeoOpAddGC:
-			gIdx := inst.Arg >> 16; cIdx := inst.Arg & 0xFFFF; sp++
-			if sp >= 64 { return nil, fmt.Errorf("NeoVM stack overflow") }
-			name := *(*string)(unsafe.Add(unsafe.Pointer(pNames), uintptr(gIdx)*unsafe.Sizeof("")))
-			cv := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(cIdx)*valSize))
-			val, _ := ctx.Get(name)
-			stack[sp] = AddAny(val, cv.ToInterface())
-		case NeoOpAddConstGlobal:
-			gIdx := inst.Arg >> 16; cIdx := inst.Arg & 0xFFFF; sp++
-			if sp >= 64 { return nil, fmt.Errorf("NeoVM stack overflow") }
-			name := *(*string)(unsafe.Add(unsafe.Pointer(pNames), uintptr(gIdx)*unsafe.Sizeof("")))
-			cv := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(cIdx)*valSize))
-			val, _ := ctx.Get(name)
-			stack[sp] = AddAny(cv.ToInterface(), val)
-		case NeoOpSubGC:
-			gIdx := inst.Arg >> 16; cIdx := inst.Arg & 0xFFFF; sp++
-			if sp >= 64 { return nil, fmt.Errorf("NeoVM stack overflow") }
-			name := *(*string)(unsafe.Add(unsafe.Pointer(pNames), uintptr(gIdx)*unsafe.Sizeof("")))
-			cv := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(cIdx)*valSize))
-			val, _ := ctx.Get(name)
-			stack[sp] = SubAny(val, cv.ToInterface())
-		case NeoOpMulGC:
-			gIdx := inst.Arg >> 16; cIdx := inst.Arg & 0xFFFF; sp++
-			if sp >= 64 { return nil, fmt.Errorf("NeoVM stack overflow") }
-			name := *(*string)(unsafe.Add(unsafe.Pointer(pNames), uintptr(gIdx)*unsafe.Sizeof("")))
-			cv := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(cIdx)*valSize))
-			val, _ := ctx.Get(name)
-			stack[sp] = MulAny(val, cv.ToInterface())
-		case NeoOpDivGC:
-			gIdx := inst.Arg >> 16; cIdx := inst.Arg & 0xFFFF; sp++
-			if sp >= 64 { return nil, fmt.Errorf("NeoVM stack overflow") }
-			name := *(*string)(unsafe.Add(unsafe.Pointer(pNames), uintptr(gIdx)*unsafe.Sizeof("")))
-			cv := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(cIdx)*valSize))
-			val, _ := ctx.Get(name)
-			stack[sp] = DivAny(val, cv.ToInterface())
-		case NeoOpSubCG:
-			gIdx := inst.Arg >> 16; cIdx := inst.Arg & 0xFFFF; sp++
-			if sp >= 64 { return nil, fmt.Errorf("NeoVM stack overflow") }
-			name := *(*string)(unsafe.Add(unsafe.Pointer(pNames), uintptr(gIdx)*unsafe.Sizeof("")))
-			cv := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(cIdx)*valSize))
-			val, _ := ctx.Get(name)
-			stack[sp] = SubAny(cv.ToInterface(), val)
-		case NeoOpMulCG:
-			gIdx := inst.Arg >> 16; cIdx := inst.Arg & 0xFFFF; sp++
-			if sp >= 64 { return nil, fmt.Errorf("NeoVM stack overflow") }
-			name := *(*string)(unsafe.Add(unsafe.Pointer(pNames), uintptr(gIdx)*unsafe.Sizeof("")))
-			cv := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(cIdx)*valSize))
-			val, _ := ctx.Get(name)
-			stack[sp] = MulAny(cv.ToInterface(), val)
-		case NeoOpDivCG:
-			gIdx := inst.Arg >> 16; cIdx := inst.Arg & 0xFFFF; sp++
-			if sp >= 64 { return nil, fmt.Errorf("NeoVM stack overflow") }
-			name := *(*string)(unsafe.Add(unsafe.Pointer(pNames), uintptr(gIdx)*unsafe.Sizeof("")))
-			cv := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(cIdx)*valSize))
-			val, _ := ctx.Get(name)
-			stack[sp] = DivAny(cv.ToInterface(), val)
-		case NeoOpGreaterGlobalConst:
-			gIdx := inst.Arg >> 16; cIdx := inst.Arg & 0xFFFF; sp++
-			if sp >= 64 { return nil, fmt.Errorf("NeoVM stack overflow") }
-			name := *(*string)(unsafe.Add(unsafe.Pointer(pNames), uintptr(gIdx)*unsafe.Sizeof("")))
-			cv := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(cIdx)*valSize))
-			val, _ := ctx.Get(name)
-			stack[sp] = Value{Type: ValBool, Num: boolToUint64(GreaterAny(val, cv.ToInterface()))}
-		case NeoOpLessGlobalConst:
-			gIdx := inst.Arg >> 16; cIdx := inst.Arg & 0xFFFF; sp++
-			if sp >= 64 { return nil, fmt.Errorf("NeoVM stack overflow") }
-			name := *(*string)(unsafe.Add(unsafe.Pointer(pNames), uintptr(gIdx)*unsafe.Sizeof("")))
-			cv := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(cIdx)*valSize))
-			val, _ := ctx.Get(name)
-			stack[sp] = Value{Type: ValBool, Num: boolToUint64(LessAny(val, cv.ToInterface()))}
-		case NeoOpAddGlobalGlobal:
-			g1Idx := inst.Arg >> 16; g2Idx := inst.Arg & 0xFFFF; sp++
-			if sp >= 64 { return nil, fmt.Errorf("NeoVM stack overflow") }
-			n1 := *(*string)(unsafe.Add(unsafe.Pointer(pNames), uintptr(g1Idx)*unsafe.Sizeof("")))
-			n2 := *(*string)(unsafe.Add(unsafe.Pointer(pNames), uintptr(g2Idx)*unsafe.Sizeof("")))
-			v1, _ := ctx.Get(n1); v2, _ := ctx.Get(n2)
-			stack[sp] = AddAny(v1, v2)
-		case NeoOpSubGlobalGlobal:
-			g1Idx := inst.Arg >> 16; g2Idx := inst.Arg & 0xFFFF; sp++
-			if sp >= 64 { return nil, fmt.Errorf("NeoVM stack overflow") }
-			n1 := *(*string)(unsafe.Add(unsafe.Pointer(pNames), uintptr(g1Idx)*unsafe.Sizeof("")))
-			n2 := *(*string)(unsafe.Add(unsafe.Pointer(pNames), uintptr(g2Idx)*unsafe.Sizeof("")))
-			v1, _ := ctx.Get(n1); v2, _ := ctx.Get(n2)
-			stack[sp] = SubAny(v1, v2)
-		case NeoOpMulGlobalGlobal:
-			g1Idx := inst.Arg >> 16; g2Idx := inst.Arg & 0xFFFF; sp++
-			if sp >= 64 { return nil, fmt.Errorf("NeoVM stack overflow") }
-			n1 := *(*string)(unsafe.Add(unsafe.Pointer(pNames), uintptr(g1Idx)*unsafe.Sizeof("")))
-			n2 := *(*string)(unsafe.Add(unsafe.Pointer(pNames), uintptr(g2Idx)*unsafe.Sizeof("")))
-			v1, _ := ctx.Get(n1); v2, _ := ctx.Get(n2)
-			stack[sp] = MulAny(v1, v2)
-		case NeoOpFusedCompareGlobalConstJumpIfFalse:
-			gIdx := int(inst.Arg >> 22) & 0x3FF; cIdx := int(inst.Arg >> 12) & 0x3FF; jTarget := int(inst.Arg) & 0xFFF
-			name := *(*string)(unsafe.Add(unsafe.Pointer(pNames), uintptr(gIdx)*unsafe.Sizeof("")))
-			cv := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(cIdx)*valSize))
-			val, _ := ctx.Get(name)
-			if !EqualAny(val, cv.ToInterface()) { pc = jTarget }
-		case NeoOpFusedGreaterGlobalConstJumpIfFalse:
-			gIdx := int(inst.Arg >> 22) & 0x3FF; cIdx := int(inst.Arg >> 12) & 0x3FF; jTarget := int(inst.Arg) & 0xFFF
-			name := *(*string)(unsafe.Add(unsafe.Pointer(pNames), uintptr(gIdx)*unsafe.Sizeof("")))
-			cv := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(cIdx)*valSize))
-			val, _ := ctx.Get(name)
-			if !GreaterAny(val, cv.ToInterface()) { pc = jTarget }
-		case NeoOpFusedLessGlobalConstJumpIfFalse:
-			gIdx := int(inst.Arg >> 22) & 0x3FF; cIdx := int(inst.Arg >> 12) & 0x3FF; jTarget := int(inst.Arg) & 0xFFF
-			name := *(*string)(unsafe.Add(unsafe.Pointer(pNames), uintptr(gIdx)*unsafe.Sizeof("")))
-			cv := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(cIdx)*valSize))
-			val, _ := ctx.Get(name)
-			if !LessAny(val, cv.ToInterface()) { pc = jTarget }
-		case NeoOpGetGlobalJumpIfFalse:
-			gIdx := inst.Arg >> 16; jTarget := inst.Arg & 0xFFFF
-			name := *(*string)(unsafe.Add(unsafe.Pointer(pNames), uintptr(gIdx)*unsafe.Sizeof("")))
-			val, _ := ctx.Get(name)
-			if !isTruthy(val) { pc = int(jTarget) }
-		case NeoOpGetGlobalJumpIfTrue:
-			gIdx := inst.Arg >> 16; jTarget := inst.Arg & 0xFFFF
-			name := *(*string)(unsafe.Add(unsafe.Pointer(pNames), uintptr(gIdx)*unsafe.Sizeof("")))
-			val, _ := ctx.Get(name)
-			if isTruthy(val) { pc = int(jTarget) }
-		case NeoOpAddC:
-			l := &stack[sp]
-			cv := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(inst.Arg)*valSize))
-			*l = l.Add(*cv)
-		case NeoOpSubC:
-			l := &stack[sp]
-			cv := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(inst.Arg)*valSize))
-			*l = l.Sub(*cv)
-		case NeoOpMulC:
-			l := &stack[sp]
-			cv := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(inst.Arg)*valSize))
-			*l = l.Mul(*cv)
-		case NeoOpDivC:
-			l := &stack[sp]
-			cv := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(inst.Arg)*valSize))
-			*l = l.Div(*cv)
-		case NeoOpConcat:
-			numArgs := int(inst.Arg); totalLen := 0; var argStringsBuf [8]string; var argStrings []string
-			if numArgs <= 8 { argStrings = argStringsBuf[:numArgs] } else { argStrings = make([]string, numArgs) }
-			for i := numArgs - 1; i >= 0; i-- {
-				v := stack[sp]; sp--
-				var s string
-				switch v.Type {
-				case ValString: s = v.Str
-				case ValInt: s = fmt.Sprintf("%d", int64(v.Num))
-				case ValFloat: s = fmt.Sprintf("%g", math.Float64frombits(v.Num))
-				case ValBool: if v.Num != 0 { s = "true" } else { s = "false" }
-				default: s = fmt.Sprintf("%v", v.ToInterface())
-				}
-				argStrings[i] = s; totalLen += len(s)
-			}
-			buf := neoBufferPool.Get().(*bytes.Buffer); buf.Reset(); buf.Grow(totalLen)
-			for _, s := range argStrings { buf.WriteString(s) }
-			res := buf.String(); neoBufferPool.Put(buf)
-			sp++; if sp >= 64 { return nil, fmt.Errorf("NeoVM stack overflow") }
-			stack[sp] = Value{Type: ValString, Str: res}
-		case NeoOpCall:
-			nameIdx := inst.Arg & 0xFFFF; numArgs := int(inst.Arg >> 16)
-			name := *(*string)(unsafe.Add(unsafe.Pointer(pNames), uintptr(nameIdx)*unsafe.Sizeof("")))
-			var argsBuf [8]any; var args []any
-			if numArgs <= 8 { args = argsBuf[:numArgs] } else { args = make([]any, numArgs) }
-			for i := numArgs - 1; i >= 0; i-- {
-				args[i] = stack[sp].ToInterface(); sp--
-			}
-			if builtin, ok := builtins[name]; ok {
-				res, err := builtin(args...); if err != nil { return nil, err }
-				sp++; if sp >= 64 { return nil, fmt.Errorf("NeoVM stack overflow") }
-				stack[sp] = FromInterface(res)
-			} else { return nil, fmt.Errorf("builtin function not found: %s", name) }
 		default:
-			return nil, fmt.Errorf("unsupported NeoVM opcode: %v", inst.Op)
+			res, err := runNeoVMGeneralFallback(inst, &stack, &sp, &pc, pConsts, ctx)
+			if err != nil { return nil, err }
+			if inst.Op == NeoOpReturn { return res, nil }
 		}
 	}
 	if sp < 0 { return nil, nil }
 	return stack[sp].ToInterface(), nil
+}
+
+func runNeoVMGeneralFallback(inst *neoInstruction, stack *[64]Value, sp *int, pc *int, pConsts *Value, ctx Context) (any, error) {
+	const valSize = unsafe.Sizeof(Value{})
+	switch inst.Op {
+	case NeoOpGreaterEqual:
+		rv := stack[*sp]; *sp--; l := &stack[*sp]
+		*l = Value{Type: ValBool, Num: boolToUint64(l.Greater(rv) || l.Equal(rv))}
+	case NeoOpLessEqual:
+		rv := stack[*sp]; *sp--; l := &stack[*sp]
+		*l = Value{Type: ValBool, Num: boolToUint64(rv.Greater(*l) || l.Equal(rv))}
+	case NeoOpAnd:
+		rv := stack[*sp]; *sp--; l := &stack[*sp]
+		*l = Value{Type: ValBool, Num: boolToUint64(isValTruthy(*l) && isValTruthy(rv))}
+	case NeoOpOr:
+		rv := stack[*sp]; *sp--; l := &stack[*sp]
+		*l = Value{Type: ValBool, Num: boolToUint64(isValTruthy(*l) || isValTruthy(rv))}
+	case NeoOpNot:
+		l := &stack[*sp]
+		*l = Value{Type: ValBool, Num: boolToUint64(!isValTruthy(*l))}
+	case NeoOpMod:
+		rv := stack[*sp]; *sp--; l := &stack[*sp]
+		res, err := l.ModErr(rv); if err != nil { return nil, err }; *l = res
+	case NeoOpJumpIfTrue:
+		l := stack[*sp]; *sp--
+		if isValTruthy(l) { *pc = int(inst.Arg) }
+	case NeoOpEqualConst, NeoOpEqualC:
+		cv := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(inst.Arg)*valSize))
+		l := &stack[*sp]
+		*l = Value{Type: ValBool, Num: boolToUint64(l.Equal(*cv))}
+	case NeoOpGreaterC:
+		cv := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(inst.Arg)*valSize))
+		l := &stack[*sp]
+		*l = Value{Type: ValBool, Num: boolToUint64(l.Greater(*cv))}
+	case NeoOpLessC:
+		cv := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(inst.Arg)*valSize))
+		l := &stack[*sp]
+		*l = Value{Type: ValBool, Num: boolToUint64(cv.Greater(*l))}
+	case NeoOpEqualGlobalConst:
+		gIdx := inst.Arg >> 16; cIdx := inst.Arg & 0xFFFF
+		name := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(gIdx)*valSize)).Str
+		cv := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(cIdx)*valSize))
+		val, _ := ctx.Get(name)
+		*sp++; if *sp >= 64 { return nil, fmt.Errorf("NeoVM stack overflow") }
+		stack[*sp] = Value{Type: ValBool, Num: boolToUint64(EqualAny(val, cv.ToInterface()))}
+	case NeoOpAddGlobal, NeoOpAddGC:
+		gIdx := inst.Arg >> 16; cIdx := inst.Arg & 0xFFFF
+		name := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(gIdx)*valSize)).Str
+		cv := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(cIdx)*valSize))
+		val, _ := ctx.Get(name)
+		*sp++; if *sp >= 64 { return nil, fmt.Errorf("NeoVM stack overflow") }
+		stack[*sp] = AddAny(val, cv.ToInterface())
+	case NeoOpAddConstGlobal:
+		gIdx := inst.Arg >> 16; cIdx := inst.Arg & 0xFFFF
+		name := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(gIdx)*valSize)).Str
+		cv := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(cIdx)*valSize))
+		val, _ := ctx.Get(name)
+		*sp++; if *sp >= 64 { return nil, fmt.Errorf("NeoVM stack overflow") }
+		stack[*sp] = AddAny(cv.ToInterface(), val)
+	case NeoOpSubGC:
+		gIdx := inst.Arg >> 16; cIdx := inst.Arg & 0xFFFF
+		name := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(gIdx)*valSize)).Str
+		cv := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(cIdx)*valSize))
+		val, _ := ctx.Get(name)
+		*sp++; if *sp >= 64 { return nil, fmt.Errorf("NeoVM stack overflow") }
+		stack[*sp] = SubAny(val, cv.ToInterface())
+	case NeoOpMulGC:
+		gIdx := inst.Arg >> 16; cIdx := inst.Arg & 0xFFFF
+		name := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(gIdx)*valSize)).Str
+		cv := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(cIdx)*valSize))
+		val, _ := ctx.Get(name)
+		*sp++; if *sp >= 64 { return nil, fmt.Errorf("NeoVM stack overflow") }
+		stack[*sp] = MulAny(val, cv.ToInterface())
+	case NeoOpDivGC:
+		gIdx := inst.Arg >> 16; cIdx := inst.Arg & 0xFFFF
+		name := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(gIdx)*valSize)).Str
+		cv := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(cIdx)*valSize))
+		val, _ := ctx.Get(name)
+		*sp++; if *sp >= 64 { return nil, fmt.Errorf("NeoVM stack overflow") }
+		stack[*sp] = DivAny(val, cv.ToInterface())
+	case NeoOpSubCG:
+		gIdx := inst.Arg >> 16; cIdx := inst.Arg & 0xFFFF
+		name := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(gIdx)*valSize)).Str
+		cv := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(cIdx)*valSize))
+		val, _ := ctx.Get(name)
+		*sp++; if *sp >= 64 { return nil, fmt.Errorf("NeoVM stack overflow") }
+		stack[*sp] = SubAny(cv.ToInterface(), val)
+	case NeoOpMulCG:
+		gIdx := inst.Arg >> 16; cIdx := inst.Arg & 0xFFFF
+		name := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(gIdx)*valSize)).Str
+		cv := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(cIdx)*valSize))
+		val, _ := ctx.Get(name)
+		*sp++; if *sp >= 64 { return nil, fmt.Errorf("NeoVM stack overflow") }
+		stack[*sp] = MulAny(cv.ToInterface(), val)
+	case NeoOpDivCG:
+		gIdx := inst.Arg >> 16; cIdx := inst.Arg & 0xFFFF
+		name := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(gIdx)*valSize)).Str
+		cv := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(cIdx)*valSize))
+		val, _ := ctx.Get(name)
+		*sp++; if *sp >= 64 { return nil, fmt.Errorf("NeoVM stack overflow") }
+		stack[*sp] = DivAny(cv.ToInterface(), val)
+	case NeoOpGreaterGlobalConst:
+		gIdx := inst.Arg >> 16; cIdx := inst.Arg & 0xFFFF
+		name := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(gIdx)*valSize)).Str
+		cv := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(cIdx)*valSize))
+		val, _ := ctx.Get(name)
+		*sp++; if *sp >= 64 { return nil, fmt.Errorf("NeoVM stack overflow") }
+		stack[*sp] = Value{Type: ValBool, Num: boolToUint64(GreaterAny(val, cv.ToInterface()))}
+	case NeoOpLessGlobalConst:
+		gIdx := inst.Arg >> 16; cIdx := inst.Arg & 0xFFFF
+		name := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(gIdx)*valSize)).Str
+		cv := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(cIdx)*valSize))
+		val, _ := ctx.Get(name)
+		*sp++; if *sp >= 64 { return nil, fmt.Errorf("NeoVM stack overflow") }
+		stack[*sp] = Value{Type: ValBool, Num: boolToUint64(LessAny(val, cv.ToInterface()))}
+	case NeoOpAddGlobalGlobal:
+		g1Idx := inst.Arg >> 16; g2Idx := inst.Arg & 0xFFFF
+		n1 := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(g1Idx)*valSize)).Str
+		n2 := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(g2Idx)*valSize)).Str
+		v1, _ := ctx.Get(n1); v2, _ := ctx.Get(n2)
+		*sp++; if *sp >= 64 { return nil, fmt.Errorf("NeoVM stack overflow") }
+		stack[*sp] = AddAny(v1, v2)
+	case NeoOpSubGlobalGlobal:
+		g1Idx := inst.Arg >> 16; g2Idx := inst.Arg & 0xFFFF
+		n1 := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(g1Idx)*valSize)).Str
+		n2 := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(g2Idx)*valSize)).Str
+		v1, _ := ctx.Get(n1); v2, _ := ctx.Get(n2)
+		*sp++; if *sp >= 64 { return nil, fmt.Errorf("NeoVM stack overflow") }
+		stack[*sp] = SubAny(v1, v2)
+	case NeoOpMulGlobalGlobal:
+		g1Idx := inst.Arg >> 16; g2Idx := inst.Arg & 0xFFFF
+		n1 := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(g1Idx)*valSize)).Str
+		n2 := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(g2Idx)*valSize)).Str
+		v1, _ := ctx.Get(n1); v2, _ := ctx.Get(n2)
+		*sp++; if *sp >= 64 { return nil, fmt.Errorf("NeoVM stack overflow") }
+		stack[*sp] = MulAny(v1, v2)
+	case NeoOpFusedCompareGlobalConstJumpIfFalse:
+		gIdx := int(inst.Arg >> 22) & 0x3FF; cIdx := int(inst.Arg >> 12) & 0x3FF; jTarget := int(inst.Arg) & 0xFFF
+		name := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(gIdx)*valSize)).Str
+		cv := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(cIdx)*valSize))
+		val, _ := ctx.Get(name)
+		if !EqualAny(val, cv.ToInterface()) { *pc = jTarget }
+	case NeoOpFusedGreaterGlobalConstJumpIfFalse:
+		gIdx := int(inst.Arg >> 22) & 0x3FF; cIdx := int(inst.Arg >> 12) & 0x3FF; jTarget := int(inst.Arg) & 0xFFF
+		name := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(gIdx)*valSize)).Str
+		cv := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(cIdx)*valSize))
+		val, _ := ctx.Get(name)
+		if !GreaterAny(val, cv.ToInterface()) { *pc = jTarget }
+	case NeoOpFusedLessGlobalConstJumpIfFalse:
+		gIdx := int(inst.Arg >> 22) & 0x3FF; cIdx := int(inst.Arg >> 12) & 0x3FF; jTarget := int(inst.Arg) & 0xFFF
+		name := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(gIdx)*valSize)).Str
+		cv := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(cIdx)*valSize))
+		val, _ := ctx.Get(name)
+		if !LessAny(val, cv.ToInterface()) { *pc = jTarget }
+	case NeoOpGetGlobalJumpIfFalse:
+		gIdx := inst.Arg >> 16; jTarget := inst.Arg & 0xFFFF
+		name := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(gIdx)*valSize)).Str
+		val, _ := ctx.Get(name)
+		if !isTruthy(val) { *pc = int(jTarget) }
+	case NeoOpGetGlobalJumpIfTrue:
+		gIdx := inst.Arg >> 16; jTarget := inst.Arg & 0xFFFF
+		name := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(gIdx)*valSize)).Str
+		val, _ := ctx.Get(name)
+		if isTruthy(val) { *pc = int(jTarget) }
+	case NeoOpCall:
+		nameIdx := inst.Arg & 0xFFFF; numArgs := int(inst.Arg >> 16)
+		name := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(nameIdx)*valSize)).Str
+		var argsBuf [8]any; var args []any
+		if numArgs <= 8 { args = argsBuf[:numArgs] } else { args = make([]any, numArgs) }
+		for i := numArgs - 1; i >= 0; i-- {
+			args[i] = stack[*sp].ToInterface(); *sp--
+		}
+		if builtin, ok := builtins[name]; ok {
+			res, err := builtin(args...); if err != nil { return nil, err }
+			*sp++; if *sp >= 64 { return nil, fmt.Errorf("NeoVM stack overflow") }
+			stack[*sp] = FromInterface(res)
+		} else { return nil, fmt.Errorf("builtin function not found: %s", name) }
+	}
+	return nil, nil
 }
 
 func (l Value) Equal(r Value) bool {

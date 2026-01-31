@@ -80,6 +80,9 @@ func NewEngineVMNeo(input string) (*Engine, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := bc.Validate(); err != nil {
+		return nil, fmt.Errorf("bytecode validation failed: %w", err)
+	}
 	// Constant detection
 	if len(bc.Instructions) == 2 && bc.Instructions[0].Op == NeoOpPush && bc.Instructions[1].Op == NeoOpReturn {
 		return &Engine{constantResult: bc.Constants[bc.Instructions[0].Arg].ToInterface(), isConstant: true}, nil

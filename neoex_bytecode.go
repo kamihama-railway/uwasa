@@ -144,5 +144,45 @@ type neoInstruction struct {
 type NeoBytecode struct {
 	Instructions []neoInstruction
 	Constants    []Value
-	Names        []string
+}
+
+func (bc *NeoBytecode) Validate() error {
+	nConsts := int32(len(bc.Constants))
+	nInsts := int32(len(bc.Instructions))
+	for i, inst := range bc.Instructions {
+		switch inst.Op {
+		case NeoOpPush, NeoOpAddC, NeoOpSubC, NeoOpMulC, NeoOpDivC, NeoOpEqualC, NeoOpGreaterC, NeoOpLessC,
+			NeoOpGetGlobal, NeoOpSetGlobal, NeoOpGetGlobalJumpIfFalse, NeoOpGetGlobalJumpIfTrue:
+			if inst.Op == NeoOpGetGlobalJumpIfFalse || inst.Op == NeoOpGetGlobalJumpIfTrue {
+				gIdx := inst.Arg >> 16
+				jTarget := inst.Arg & 0xFFFF
+				if gIdx < 0 || gIdx >= nConsts { return fmt.Errorf("inst %d: global index %d out of range", i, gIdx) }
+				if jTarget < 0 || jTarget >= nInsts { return fmt.Errorf("inst %d: jump target %d out of range", i, jTarget) }
+			} else {
+				if inst.Arg < 0 || inst.Arg >= nConsts { return fmt.Errorf("inst %d: arg %d out of range", i, inst.Arg) }
+			}
+		case NeoOpJump, NeoOpJumpIfFalse:
+			if inst.Arg < 0 || inst.Arg >= nInsts { return fmt.Errorf("inst %d: jump target %d out of range", i, inst.Arg) }
+		case NeoOpEqualGlobalConst, NeoOpAddGlobal, NeoOpAddGC, NeoOpAddConstGlobal, NeoOpSubGC, NeoOpMulGC, NeoOpDivGC,
+			NeoOpSubCG, NeoOpMulCG, NeoOpDivCG, NeoOpGreaterGlobalConst, NeoOpLessGlobalConst, NeoOpAddGlobalGlobal,
+			NeoOpSubGlobalGlobal, NeoOpMulGlobalGlobal, NeoOpConcatGC, NeoOpConcatCG:
+			idx1 := inst.Arg >> 16
+			idx2 := inst.Arg & 0xFFFF
+			if idx1 < 0 || idx1 >= nConsts { return fmt.Errorf("inst %d: idx1 %d out of range", i, idx1) }
+			if idx2 < 0 || idx2 >= nConsts { return fmt.Errorf("inst %d: idx2 %d out of range", i, idx2) }
+		case NeoOpFusedCompareGlobalConstJumpIfFalse, NeoOpFusedGreaterGlobalConstJumpIfFalse, NeoOpFusedLessGlobalConstJumpIfFalse:
+			gIdx := (inst.Arg >> 22) & 0x3FF
+			cIdx := (inst.Arg >> 12) & 0x3FF
+			jTarget := inst.Arg & 0xFFF
+			if gIdx < 0 || gIdx >= nConsts { return fmt.Errorf("inst %d: global index %d out of range", i, gIdx) }
+			if cIdx < 0 || cIdx >= nConsts { return fmt.Errorf("inst %d: const index %d out of range", i, cIdx) }
+			if jTarget < 0 || jTarget >= nInsts { return fmt.Errorf("inst %d: jump target %d out of range", i, jTarget) }
+		case NeoOpCall:
+			numArgs := inst.Arg >> 16
+			nameIdx := inst.Arg & 0xFFFF
+			if nameIdx < 0 || nameIdx >= nConsts { return fmt.Errorf("inst %d: function name index %d out of range", i, nameIdx) }
+			_ = numArgs
+		}
+	}
+	return nil
 }
