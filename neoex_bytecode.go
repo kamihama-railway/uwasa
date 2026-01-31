@@ -38,6 +38,9 @@ const (
 	NeoOpEqualGlobalConst
 	NeoOpGreaterGlobalConst
 	NeoOpLessGlobalConst
+	NeoOpEqualC
+	NeoOpGreaterC
+	NeoOpLessC
 	NeoOpAddGlobalGlobal
 	NeoOpSubGlobalGlobal
 	NeoOpMulGlobalGlobal
@@ -45,6 +48,9 @@ const (
 	NeoOpSubGC
 	NeoOpMulGC
 	NeoOpDivGC
+	NeoOpSubCG
+	NeoOpMulCG
+	NeoOpDivCG
 	NeoOpGetGlobalJumpIfFalse
 	NeoOpGetGlobalJumpIfTrue
 	NeoOpConcat
@@ -96,6 +102,9 @@ func (o NeoOpCode) String() string {
 	case NeoOpEqualGlobalConst: return "EQGC"
 	case NeoOpGreaterGlobalConst: return "GTGC"
 	case NeoOpLessGlobalConst: return "LTGC"
+	case NeoOpEqualC: return "EQC"
+	case NeoOpGreaterC: return "GTC"
+	case NeoOpLessC: return "LTC"
 	case NeoOpAddGlobalGlobal: return "ADDGG"
 	case NeoOpSubGlobalGlobal: return "SUBGG"
 	case NeoOpMulGlobalGlobal: return "MULGG"
@@ -103,6 +112,9 @@ func (o NeoOpCode) String() string {
 	case NeoOpSubGC: return "SUBGC"
 	case NeoOpMulGC: return "MULGC"
 	case NeoOpDivGC: return "DIVGC"
+	case NeoOpSubCG: return "SUBCG"
+	case NeoOpMulCG: return "MULCG"
+	case NeoOpDivCG: return "DIVCG"
 	case NeoOpGetGlobalJumpIfFalse: return "GG JIF"
 	case NeoOpGetGlobalJumpIfTrue: return "GG JIT"
 	case NeoOpConcat: return "CONCAT"

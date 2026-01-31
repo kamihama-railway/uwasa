@@ -29,7 +29,8 @@ type NeoCompiler struct {
 }
 
 func NewNeoCompiler(input string) *NeoCompiler {
-	l := NewLexer(input)
+	l := lexerPool.Get().(*Lexer)
+	l.Reset(input)
 	c := &NeoCompiler{
 		lexer:    l,
 		constMap: make(map[any]int32),
@@ -39,12 +40,17 @@ func NewNeoCompiler(input string) *NeoCompiler {
 	return c
 }
 
+func (c *NeoCompiler) Close() {
+	lexerPool.Put(c.lexer)
+}
+
 func (c *NeoCompiler) nextToken() {
 	c.curToken = c.peekToken
 	c.peekToken = c.lexer.NextToken()
 }
 
 func (c *NeoCompiler) Compile() (*NeoBytecode, error) {
+	defer c.Close()
 	val, err := c.parseExpression(LOWEST)
 	if err != nil {
 		return nil, err
@@ -681,6 +687,10 @@ func (c *NeoCompiler) peephole() {
 					op := NeoOpCode(0)
 					switch c.instructions[i+2].Op {
 					case NeoOpAdd: op = NeoOpAddConstGlobal
+					case NeoOpSub: op = NeoOpSubCG
+					case NeoOpMul: op = NeoOpMulCG
+					case NeoOpDiv: op = NeoOpDivCG
+					case NeoOpEqual: op = NeoOpEqualGlobalConst
 					case NeoOpConcat2: op = NeoOpConcatCG
 					}
 					if op != 0 {
@@ -696,6 +706,9 @@ func (c *NeoCompiler) peephole() {
 				case NeoOpSub: op = NeoOpSubC
 				case NeoOpMul: op = NeoOpMulC
 				case NeoOpDiv: op = NeoOpDivC
+				case NeoOpEqual: op = NeoOpEqualC
+				case NeoOpGreater: op = NeoOpGreaterC
+				case NeoOpLess: op = NeoOpLessC
 				}
 				if op != 0 {
 					newInsts = append(newInsts, neoInstruction{Op: op, Arg: cIdx})

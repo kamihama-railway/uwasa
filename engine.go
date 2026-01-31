@@ -141,6 +141,10 @@ func (e *Engine) Execute(vars map[string]any) (any, error) {
 		return e.constantResult, nil
 	}
 
+	if e.neoBytecode != nil {
+		return RunNeoVMWithMap(e.neoBytecode, vars)
+	}
+
 	ctx := NewMapContext(vars)
 	defer func() {
 		ctx.vars = nil
@@ -148,9 +152,6 @@ func (e *Engine) Execute(vars map[string]any) (any, error) {
 	}()
 	if e.registerBytecode != nil {
 		return RunRegisterVM(e.registerBytecode, ctx)
-	}
-	if e.neoBytecode != nil {
-		return RunNeoVMWithMap(e.neoBytecode, vars)
 	}
 	if e.bytecode != nil {
 		return RunVM(e.bytecode, ctx)

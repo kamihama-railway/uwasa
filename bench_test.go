@@ -36,6 +36,54 @@ func BenchmarkEngineExecute(b *testing.B) {
 	}
 }
 
+func BenchmarkFullLifecycle_RegisterVM(b *testing.B) {
+	input := `if (a + b) * (c - d) > 100 && e == "test" then f = 1`
+	vars := map[string]any{
+		"a": int64(50), "b": int64(60), "c": int64(10), "d": int64(5), "e": "test",
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		engine, _ := NewEngineVMWithOptions(input, EngineOptions{UseRegisterVM: true})
+		engine.Execute(vars)
+	}
+}
+
+func BenchmarkFullLifecycle_Standard(b *testing.B) {
+	input := `if (a + b) * (c - d) > 100 && e == "test" then f = 1`
+	vars := map[string]any{
+		"a": int64(50), "b": int64(60), "c": int64(10), "d": int64(5), "e": "test",
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		engine, _ := NewEngine(input)
+		engine.Execute(vars)
+	}
+}
+
+func BenchmarkFullLifecycle_VM(b *testing.B) {
+	input := `if (a + b) * (c - d) > 100 && e == "test" then f = 1`
+	vars := map[string]any{
+		"a": int64(50), "b": int64(60), "c": int64(10), "d": int64(5), "e": "test",
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		engine, _ := NewEngineVM(input)
+		engine.Execute(vars)
+	}
+}
+
+func BenchmarkFullLifecycle_NeoEx(b *testing.B) {
+	input := `if (a + b) * (c - d) > 100 && e == "test" then f = 1`
+	vars := map[string]any{
+		"a": int64(50), "b": int64(60), "c": int64(10), "d": int64(5), "e": "test",
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		engine, _ := NewEngineVMNeo(input)
+		engine.Execute(vars)
+	}
+}
+
 func BenchmarkEngineExecute_NeoEx(b *testing.B) {
 	input := `if a == 0 is "yes" else if a == 1 is "ok" else is "bad"`
 	engine, _ := NewEngineVMNeo(input)
