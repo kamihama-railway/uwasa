@@ -88,7 +88,7 @@ func TestVMStackOverflow(t *testing.T) {
 	// 1. Test basic stack overflow (many nested additions with identifier)
 	depth := 70
 	expr := "a"
-	for i := 0; i < depth; i++ {
+	for range depth {
 		expr = "a + (" + expr + ")"
 	}
 	engine, err := NewEngineVMWithOptions(expr, EngineOptions{OptimizationLevel: OptNone})
@@ -102,7 +102,7 @@ func TestVMStackOverflow(t *testing.T) {
 
 	// 2. Test stack overflow with OpAddGlobal (optimized path)
 	expr2 := "(a+1)"
-	for i := 0; i < depth; i++ {
+	for range depth {
 		expr2 = "(a+1) + (" + expr2 + ")"
 	}
 	engine2, err := NewEngineVMWithOptions(expr2, EngineOptions{OptimizationLevel: OptBasic})

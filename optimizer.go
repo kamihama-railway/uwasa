@@ -3,6 +3,8 @@
 
 package uwasa
 
+import "strings"
+
 import "fmt"
 
 func Fold(node Node) Node {
@@ -191,21 +193,22 @@ func Fold(node Node) Node {
 		}
 		// If it's a call to "concat" with all constant arguments, we can fold it
 		if ident, ok := n.Function.(*Identifier); ok && ident.Value == "concat" && allConst {
-			res := ""
+			var res strings.Builder
 			for _, arg := range n.Arguments {
 				switch a := arg.(type) {
-				case *StringLiteral: res += a.Value
+				case *StringLiteral:
+					res.WriteString(a.Value)
 				case *NumberLiteral:
 					if a.IsInt {
-						res += fmt.Sprintf("%d", a.Int64Value)
+						res.WriteString(fmt.Sprintf("%d", a.Int64Value))
 					} else {
-						res += fmt.Sprintf("%g", a.Float64Value)
+						res.WriteString(fmt.Sprintf("%g", a.Float64Value))
 					}
 				case *BooleanLiteral:
-					res += fmt.Sprintf("%v", a.Value)
+					res.WriteString(fmt.Sprintf("%v", a.Value))
 				}
 			}
-			return &StringLiteral{Value: res}
+			return &StringLiteral{Value: res.String()}
 		}
 
 	case *AssignExpression:

@@ -57,7 +57,7 @@ func TestNeoExVM_Correctness(t *testing.T) {
 func TestNeoExVM_StackOverflow(t *testing.T) {
 	// Stack is 64
 	input := "a"
-	for i := 0; i < 70; i++ {
+	for range 70 {
 		input = "a + (" + input + ")"
 	}
 	engine, err := NewEngineVMNeo(input)
