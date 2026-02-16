@@ -77,7 +77,7 @@ func TestNeoExVM_ShortCircuit(t *testing.T) {
 func TestNeoExVMStackOverflow(t *testing.T) {
 	depth := 70
 	expr := "a"
-	for i := 0; i < depth; i++ {
+	for range depth {
 		expr = "a + (" + expr + ")"
 	}
 	engine, err := NewEngineVMNeo(expr)
@@ -103,7 +103,7 @@ func TestNeoExVM_StringFusion(t *testing.T) {
 	// Then "ab" + c -> Concat("ab", c)
 	// Then Concat("ab", c) + d -> Concat("ab", c, d)
 	// Then Concat("ab", c, d) + "e" -> Concat("ab", c, d, "e")
-	
+
 	foundConcat := false
 	var nArgs int32
 	for _, inst := range bc.Instructions {
@@ -135,4 +135,3 @@ func TestNeoExVM_ConstantFold(t *testing.T) {
 		t.Errorf("Expected foobarbaz, got %s", res)
 	}
 }
-

@@ -3,6 +3,8 @@
 
 package uwasa
 
+import "strings"
+
 import "fmt"
 
 type Node interface {
@@ -19,7 +21,7 @@ type Identifier struct {
 }
 
 func (i *Identifier) expressionNode() {}
-func (i *Identifier) String() string   { return i.Value }
+func (i *Identifier) String() string  { return i.Value }
 
 type NumberLiteral struct {
 	Int64Value   int64
@@ -40,7 +42,7 @@ type StringLiteral struct {
 }
 
 func (s *StringLiteral) expressionNode() {}
-func (s *StringLiteral) String() string   { return s.Value }
+func (s *StringLiteral) String() string  { return s.Value }
 
 type BooleanLiteral struct {
 	Value bool
@@ -123,13 +125,14 @@ type CallExpression struct {
 
 func (ce *CallExpression) expressionNode() {}
 func (ce *CallExpression) String() string {
-	out := ce.Function.String() + "("
+	var out strings.Builder
+	out.WriteString(ce.Function.String() + "(")
 	for i, arg := range ce.Arguments {
-		out += arg.String()
+		out.WriteString(arg.String())
 		if i < len(ce.Arguments)-1 {
-			out += ", "
+			out.WriteString(", ")
 		}
 	}
-	out += ")"
-	return out
+	out.WriteString(")")
+	return out.String()
 }

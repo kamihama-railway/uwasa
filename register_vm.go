@@ -234,7 +234,7 @@ func RunRegisterVM(bc *RegisterBytecode, ctx Context) (any, error) {
 			}
 
 			args := make([]any, numArgs)
-			for i := 0; i < numArgs; i++ {
+			for i := range numArgs {
 				args[i] = regs[argsStart+i].ToInterface()
 			}
 
@@ -262,7 +262,7 @@ func RunRegisterVM(bc *RegisterBytecode, ctx Context) (any, error) {
 			if argsStart+numArgs > len(regs) {
 				return nil, fmt.Errorf("register index out of bounds in CONCAT")
 			}
-			for i := 0; i < numArgs; i++ {
+			for i := range numArgs {
 				v := regs[argsStart+i]
 				var s string
 				switch v.Type {
