@@ -181,14 +181,21 @@ func neoContainsDot(s string) bool {
 }
 
 func (c *NeoCompiler) parseNumberLiteral() (compilationValue, error) {
-	v, err := strconv.ParseFloat(c.curToken.Literal, 64)
-	if err != nil {
-		return compilationValue{}, err
-	}
 	var val Value
 	if !neoContainsDot(c.curToken.Literal) {
-		val = Value{Type: ValInt, Num: uint64(int64(v))}
+		v, err := strconv.ParseInt(c.curToken.Literal, 0, 64)
+		if err != nil {
+			// Fallback to float if it's too big for int64?
+			// But usually we want exact int64.
+			v_f, err_f := strconv.ParseFloat(c.curToken.Literal, 64)
+			if err_f != nil { return compilationValue{}, err_f }
+			val = Value{Type: ValFloat, Num: math.Float64bits(v_f)}
+		} else {
+			val = Value{Type: ValInt, Num: uint64(v)}
+		}
 	} else {
+		v, err := strconv.ParseFloat(c.curToken.Literal, 64)
+		if err != nil { return compilationValue{}, err }
 		val = Value{Type: ValFloat, Num: math.Float64bits(v)}
 	}
 	return compilationValue{isConst: true, val: val}, nil
@@ -430,7 +437,6 @@ func (c *NeoCompiler) foldInfix(l, r Value, op string) (Value, bool) {
 		}
 	case "/":
 		if (r.Type == ValInt && r.Num == 0) || (r.Type == ValFloat && math.Float64frombits(r.Num) == 0) {
-			c.errors = append(c.errors, "division by zero")
 			return Value{}, false
 		}
 		if l.Type == ValInt && r.Type == ValInt { return Value{Type: ValInt, Num: l.Num / r.Num}, true }
@@ -439,7 +445,7 @@ func (c *NeoCompiler) foldInfix(l, r Value, op string) (Value, bool) {
 			return Value{Type: ValFloat, Num: math.Float64bits(lf / rf)}, true
 		}
 	case "%":
-		if r.Type == ValInt && r.Num == 0 { c.errors = append(c.errors, "division by zero"); return Value{}, false }
+		if r.Type == ValInt && r.Num == 0 { return Value{}, false }
 		if l.Type == ValInt && r.Type == ValInt { return Value{Type: ValInt, Num: l.Num % r.Num}, true }
 	case "==": return Value{Type: ValBool, Num: boolToUint64(c.compare(l, r) == 0)}, true
 	case ">": return Value{Type: ValBool, Num: boolToUint64(c.compare(l, r) > 0)}, true
@@ -553,7 +559,10 @@ func (c *NeoCompiler) parseIfExpression() (compilationValue, error) {
 		cons, err := c.parseExpression(LOWEST)
 		if err != nil { return compilationValue{}, err }
 		if cons.isConst { c.emitPush(cons.val) }
+		jumpEnd := c.emit(NeoOpJump, 0)
 		c.patch(jumpFalse, int32(len(c.instructions)))
+		c.emitPush(Value{Type: ValNil})
+		c.patch(jumpEnd, int32(len(c.instructions)))
 		return compilationValue{isConst: false}, nil
 	}
 	if c.peekToken.Type == TokenIs {
@@ -599,7 +608,8 @@ func (c *NeoCompiler) parseIfExpression() (compilationValue, error) {
 		for _, target := range jumpEndTargets { c.patch(target, int32(len(c.instructions))) }
 		return compilationValue{isConst: false}, nil
 	}
-	return compilationValue{}, fmt.Errorf("expected then or is after if condition, got %s", c.peekToken.Type)
+	// Simple if <cond> -> returns bool
+	return compilationValue{isConst: false}, nil
 }
 
 func (c *NeoCompiler) emit(op NeoOpCode, arg int32) int {
