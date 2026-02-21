@@ -43,6 +43,10 @@ const (
 	OpGetGlobalJumpIfFalse
 	OpGetGlobalJumpIfTrue
 	OpConcat
+	OpMapGet
+	OpMapSet
+	OpMapHas
+	OpMapDel
 )
 
 func (o OpCode) String() string {
@@ -78,6 +82,10 @@ func (o OpCode) String() string {
 	case OpGetGlobalJumpIfFalse: return "GG JIF"
 	case OpGetGlobalJumpIfTrue: return "GG JIT"
 	case OpConcat: return "CONCAT"
+	case OpMapGet: return "MGET"
+	case OpMapSet: return "MSET"
+	case OpMapHas: return "MHAS"
+	case OpMapDel: return "MDEL"
 	default: return fmt.Sprintf("UNKNOWN(%d)", o)
 	}
 }
@@ -90,12 +98,14 @@ const (
 	ValFloat
 	ValBool
 	ValString
+	ValMap
 )
 
 type Value struct {
 	Type ValueType
 	Num  uint64
 	Str  string
+	Ptr  any // For maps
 }
 
 func (v Value) ToInterface() any {
@@ -108,6 +118,8 @@ func (v Value) ToInterface() any {
 		return v.Num != 0
 	case ValString:
 		return v.Str
+	case ValMap:
+		return v.Ptr
 	default:
 		return nil
 	}
@@ -128,6 +140,8 @@ func FromInterface(v any) Value {
 		return Value{Type: ValBool, Num: 0}
 	case string:
 		return Value{Type: ValString, Str: val}
+	case map[string]any:
+		return Value{Type: ValMap, Ptr: val}
 	default:
 		return Value{Type: ValNil}
 	}
