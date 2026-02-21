@@ -296,6 +296,39 @@ func runVMMapped(bc *RenderedBytecode, ctx *MapContext) (any, error) {
 		case OpGetGlobalJumpIfTrue:
 			gIdx := inst.Arg >> 16; jTarget := inst.Arg & 0xFFFF
 			if isValTruthy(FromInterface(vars[consts[gIdx].Str])) { pc = int(jTarget) }
+		case OpMapGet:
+			key := stack[sp]; sp--
+			obj := stack[sp]
+			if obj.Type != ValMap { return nil, fmt.Errorf("MGET: not a map") }
+			if key.Type != ValString { return nil, fmt.Errorf("MGET: key must be string") }
+			m := obj.Ptr.(map[string]any)
+			stack[sp] = FromInterface(m[key.Str])
+		case OpMapSet:
+			val := stack[sp]; sp--
+			key := stack[sp]; sp--
+			obj := stack[sp]
+			if obj.Type != ValMap { return nil, fmt.Errorf("MSET: not a map") }
+			if key.Type != ValString { return nil, fmt.Errorf("MSET: key must be string") }
+			m := obj.Ptr.(map[string]any)
+			m[key.Str] = val.ToInterface()
+			stack[sp] = Value{Type: ValNil}
+		case OpMapHas:
+			key := stack[sp]; sp--
+			obj := stack[sp]
+			if obj.Type != ValMap { return nil, fmt.Errorf("MHAS: not a map") }
+			if key.Type != ValString { return nil, fmt.Errorf("MHAS: key must be string") }
+			m := obj.Ptr.(map[string]any)
+			_, ok := m[key.Str]
+			res := uint64(0); if ok { res = 1 }
+			stack[sp] = Value{Type: ValBool, Num: res}
+		case OpMapDel:
+			key := stack[sp]; sp--
+			obj := stack[sp]
+			if obj.Type != ValMap { return nil, fmt.Errorf("MDEL: not a map") }
+			if key.Type != ValString { return nil, fmt.Errorf("MDEL: key must be string") }
+			m := obj.Ptr.(map[string]any)
+			delete(m, key.Str)
+			stack[sp] = Value{Type: ValNil}
 		case OpConcat:
 			numArgs := int(inst.Arg)
 			totalLen := 0
@@ -601,6 +634,39 @@ func runVMGeneral(bc *RenderedBytecode, ctx Context) (any, error) {
 			gIdx := inst.Arg >> 16; jTarget := inst.Arg & 0xFFFF
 			val, _ := ctx.Get(consts[gIdx].Str)
 			if isValTruthy(FromInterface(val)) { pc = int(jTarget) }
+		case OpMapGet:
+			key := stack[sp]; sp--
+			obj := stack[sp]
+			if obj.Type != ValMap { return nil, fmt.Errorf("MGET: not a map") }
+			if key.Type != ValString { return nil, fmt.Errorf("MGET: key must be string") }
+			m := obj.Ptr.(map[string]any)
+			stack[sp] = FromInterface(m[key.Str])
+		case OpMapSet:
+			val := stack[sp]; sp--
+			key := stack[sp]; sp--
+			obj := stack[sp]
+			if obj.Type != ValMap { return nil, fmt.Errorf("MSET: not a map") }
+			if key.Type != ValString { return nil, fmt.Errorf("MSET: key must be string") }
+			m := obj.Ptr.(map[string]any)
+			m[key.Str] = val.ToInterface()
+			stack[sp] = Value{Type: ValNil}
+		case OpMapHas:
+			key := stack[sp]; sp--
+			obj := stack[sp]
+			if obj.Type != ValMap { return nil, fmt.Errorf("MHAS: not a map") }
+			if key.Type != ValString { return nil, fmt.Errorf("MHAS: key must be string") }
+			m := obj.Ptr.(map[string]any)
+			_, ok := m[key.Str]
+			res := uint64(0); if ok { res = 1 }
+			stack[sp] = Value{Type: ValBool, Num: res}
+		case OpMapDel:
+			key := stack[sp]; sp--
+			obj := stack[sp]
+			if obj.Type != ValMap { return nil, fmt.Errorf("MDEL: not a map") }
+			if key.Type != ValString { return nil, fmt.Errorf("MDEL: key must be string") }
+			m := obj.Ptr.(map[string]any)
+			delete(m, key.Str)
+			stack[sp] = Value{Type: ValNil}
 		case OpConcat:
 			numArgs := int(inst.Arg)
 			totalLen := 0
