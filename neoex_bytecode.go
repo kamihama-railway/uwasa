@@ -71,7 +71,8 @@ const (
 	NeoOpMapSet
 	NeoOpMapHas
 	NeoOpMapDel
-	NeoOpReturn // New for NeoEx to signal end of execution if needed
+	NeoOpMapGetConst
+	NeoOpReturn
 )
 
 func (o NeoOpCode) String() string {
@@ -139,6 +140,7 @@ func (o NeoOpCode) String() string {
 	case NeoOpMapSet: return "MSET"
 	case NeoOpMapHas: return "MHAS"
 	case NeoOpMapDel: return "MDEL"
+	case NeoOpMapGetConst: return "MGETC"
 	case NeoOpReturn: return "RET"
 	default: return fmt.Sprintf("NEO_UNKNOWN(%d)", o)
 	}

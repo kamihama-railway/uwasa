@@ -50,10 +50,10 @@ func getPrecedence(t TokenType) int {
 }
 
 type Parser struct {
-	l      *Lexer
-	curTok Token
+	l       *Lexer
+	curTok  Token
 	peekTok Token
-	errors []string
+	errors  []string
 
 	prefixParseFns map[TokenType]prefixParseFn
 	infixParseFns  map[TokenType]infixParseFn

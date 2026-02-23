@@ -131,26 +131,42 @@ func Eval(node Node, ctx Context) (any, error) {
 
 		switch n.Method {
 		case "get":
-			if len(args) != 1 { return nil, fmt.Errorf("get expects 1 argument") }
+			if len(args) != 1 {
+				return nil, fmt.Errorf("get expects 1 argument")
+			}
 			key, ok := args[0].(string)
-			if !ok { return nil, fmt.Errorf("get key must be string") }
+			if !ok {
+				return nil, fmt.Errorf("get key must be string")
+			}
 			return m[key], nil
 		case "set":
-			if len(args) != 2 { return nil, fmt.Errorf("set expects 2 arguments") }
+			if len(args) != 2 {
+				return nil, fmt.Errorf("set expects 2 arguments")
+			}
 			key, ok := args[0].(string)
-			if !ok { return nil, fmt.Errorf("set key must be string") }
+			if !ok {
+				return nil, fmt.Errorf("set key must be string")
+			}
 			m[key] = args[1]
 			return nil, nil
 		case "has":
-			if len(args) != 1 { return nil, fmt.Errorf("has expects 1 argument") }
+			if len(args) != 1 {
+				return nil, fmt.Errorf("has expects 1 argument")
+			}
 			key, ok := args[0].(string)
-			if !ok { return nil, fmt.Errorf("has key must be string") }
+			if !ok {
+				return nil, fmt.Errorf("has key must be string")
+			}
 			_, exists := m[key]
 			return boolToAny(exists), nil
 		case "del":
-			if len(args) != 1 { return nil, fmt.Errorf("del expects 1 argument") }
+			if len(args) != 1 {
+				return nil, fmt.Errorf("del expects 1 argument")
+			}
 			key, ok := args[0].(string)
-			if !ok { return nil, fmt.Errorf("del key must be string") }
+			if !ok {
+				return nil, fmt.Errorf("del key must be string")
+			}
 			delete(m, key)
 			return nil, nil
 		default:
@@ -195,14 +211,21 @@ func evalArithmetic(operator string, left, right any) (any, error) {
 	ir, okR := right.(int64)
 	if okL && okR {
 		switch operator {
-		case "+": return il + ir, nil
-		case "-": return il - ir, nil
-		case "*": return il * ir, nil
+		case "+":
+			return il + ir, nil
+		case "-":
+			return il - ir, nil
+		case "*":
+			return il * ir, nil
 		case "/":
-			if ir == 0 { return nil, fmt.Errorf("division by zero") }
+			if ir == 0 {
+				return nil, fmt.Errorf("division by zero")
+			}
 			return il / ir, nil
 		case "%":
-			if ir == 0 { return nil, fmt.Errorf("division by zero") }
+			if ir == 0 {
+				return nil, fmt.Errorf("division by zero")
+			}
 			return il % ir, nil
 		}
 	}
@@ -221,11 +244,16 @@ func evalArithmetic(operator string, left, right any) (any, error) {
 	fr, okFR := toFloat64(right)
 	if okFL && okFR {
 		switch operator {
-		case "+": return fl + fr, nil
-		case "-": return fl - fr, nil
-		case "*": return fl * fr, nil
+		case "+":
+			return fl + fr, nil
+		case "-":
+			return fl - fr, nil
+		case "*":
+			return fl * fr, nil
 		case "/":
-			if fr == 0 { return nil, fmt.Errorf("division by zero") }
+			if fr == 0 {
+				return nil, fmt.Errorf("division by zero")
+			}
 			return fl / fr, nil
 		}
 	}
@@ -239,11 +267,16 @@ func evalComparison(operator string, left, right any) (any, error) {
 	ir, okR := right.(int64)
 	if okL && okR {
 		switch operator {
-		case "==": return boolToAny(il == ir), nil
-		case ">":  return boolToAny(il > ir), nil
-		case "<":  return boolToAny(il < ir), nil
-		case ">=": return boolToAny(il >= ir), nil
-		case "<=": return boolToAny(il <= ir), nil
+		case "==":
+			return boolToAny(il == ir), nil
+		case ">":
+			return boolToAny(il > ir), nil
+		case "<":
+			return boolToAny(il < ir), nil
+		case ">=":
+			return boolToAny(il >= ir), nil
+		case "<=":
+			return boolToAny(il <= ir), nil
 		}
 	}
 
@@ -252,11 +285,16 @@ func evalComparison(operator string, left, right any) (any, error) {
 	fr, okFR := toFloat64(right)
 	if okFL && okFR {
 		switch operator {
-		case "==": return boolToAny(fl == fr), nil
-		case ">":  return boolToAny(fl > fr), nil
-		case "<":  return boolToAny(fl < fr), nil
-		case ">=": return boolToAny(fl >= fr), nil
-		case "<=": return boolToAny(fl <= fr), nil
+		case "==":
+			return boolToAny(fl == fr), nil
+		case ">":
+			return boolToAny(fl > fr), nil
+		case "<":
+			return boolToAny(fl < fr), nil
+		case ">=":
+			return boolToAny(fl >= fr), nil
+		case "<=":
+			return boolToAny(fl <= fr), nil
 		}
 	}
 
@@ -311,15 +349,19 @@ var builtins = map[string]BuiltinFunc{
 
 func toFloat64(v any) (float64, bool) {
 	switch val := v.(type) {
-	case float64: return val, true
-	case int64:   return float64(val), true
-	case int:     return float64(val), true
-	case float32: return float64(val), true
-	case int32:   return float64(val), true
+	case float64:
+		return val, true
+	case int64:
+		return float64(val), true
+	case int:
+		return float64(val), true
+	case float32:
+		return float64(val), true
+	case int32:
+		return float64(val), true
 	}
 	return 0, false
 }
-
 
 func evalIfExpression(ie *IfExpression, ctx Context) (any, error) {
 	cond, err := Eval(ie.Condition, ctx)

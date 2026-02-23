@@ -15,31 +15,31 @@ const (
 	TokenIs
 	TokenElse
 	TokenThen
-	TokenAssign    // =
-	TokenPlus      // +
-	TokenMinus     // -
-	TokenAsterisk  // *
-	TokenSlash     // /
-	TokenPercent   // %
-	TokenGt        // >
-	TokenLt        // <
-	TokenGe        // >=
-	TokenLe        // <=
-	TokenEq        // ==
-	TokenAnd       // &&
-	TokenOr        // ||
-	TokenIllegal   // illegal
-	TokenIdent     // identifier
-	TokenNumber    // number literal
-	TokenString    // string literal
-	TokenTrue      // true
-	TokenFalse     // false
-	TokenLParen    // (
-	TokenRParen    // )
-	TokenComma     // ,
-	TokenBang      // !
-	TokenDot       // .
-	TokenSequence  // =>
+	TokenAssign   // =
+	TokenPlus     // +
+	TokenMinus    // -
+	TokenAsterisk // *
+	TokenSlash    // /
+	TokenPercent  // %
+	TokenGt       // >
+	TokenLt       // <
+	TokenGe       // >=
+	TokenLe       // <=
+	TokenEq       // ==
+	TokenAnd      // &&
+	TokenOr       // ||
+	TokenIllegal  // illegal
+	TokenIdent    // identifier
+	TokenNumber   // number literal
+	TokenString   // string literal
+	TokenTrue     // true
+	TokenFalse    // false
+	TokenLParen   // (
+	TokenRParen   // )
+	TokenComma    // ,
+	TokenBang     // !
+	TokenDot      // .
+	TokenSequence // =>
 )
 
 type Token struct {
@@ -239,34 +239,63 @@ func lookupIdent(ident string) TokenType {
 
 func (t TokenType) String() string {
 	switch t {
-	case TokenEOF: return "EOF"
-	case TokenIf: return "if"
-	case TokenIs: return "is"
-	case TokenElse: return "else"
-	case TokenThen: return "then"
-	case TokenAssign: return "="
-	case TokenPlus: return "+"
-	case TokenMinus: return "-"
-	case TokenAsterisk: return "*"
-	case TokenSlash: return "/"
-	case TokenPercent: return "%"
-	case TokenGt: return ">"
-	case TokenLt: return "<"
-	case TokenGe: return ">="
-	case TokenLe: return "<="
-	case TokenEq: return "=="
-	case TokenAnd: return "&&"
-	case TokenOr: return "||"
-	case TokenIllegal: return "ILLEGAL"
-	case TokenIdent: return "IDENT"
-	case TokenNumber: return "NUMBER"
-	case TokenString: return "STRING"
-	case TokenTrue: return "true"
-	case TokenFalse: return "false"
-	case TokenLParen: return "("
-	case TokenRParen: return ")"
-	case TokenComma: return ","
-	case TokenBang: return "!"
-	default: return "UNKNOWN"
+	case TokenEOF:
+		return "EOF"
+	case TokenIf:
+		return "if"
+	case TokenIs:
+		return "is"
+	case TokenElse:
+		return "else"
+	case TokenThen:
+		return "then"
+	case TokenAssign:
+		return "="
+	case TokenPlus:
+		return "+"
+	case TokenMinus:
+		return "-"
+	case TokenAsterisk:
+		return "*"
+	case TokenSlash:
+		return "/"
+	case TokenPercent:
+		return "%"
+	case TokenGt:
+		return ">"
+	case TokenLt:
+		return "<"
+	case TokenGe:
+		return ">="
+	case TokenLe:
+		return "<="
+	case TokenEq:
+		return "=="
+	case TokenAnd:
+		return "&&"
+	case TokenOr:
+		return "||"
+	case TokenIllegal:
+		return "ILLEGAL"
+	case TokenIdent:
+		return "IDENT"
+	case TokenNumber:
+		return "NUMBER"
+	case TokenString:
+		return "STRING"
+	case TokenTrue:
+		return "true"
+	case TokenFalse:
+		return "false"
+	case TokenLParen:
+		return "("
+	case TokenRParen:
+		return ")"
+	case TokenComma:
+		return ","
+	case TokenBang:
+		return "!"
+	default:
+		return "UNKNOWN"
 	}
 }

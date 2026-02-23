@@ -47,6 +47,7 @@ const (
 	OpMapSet
 	OpMapHas
 	OpMapDel
+	OpMapGetConst
 )
 
 func (o OpCode) String() string {
@@ -86,6 +87,7 @@ func (o OpCode) String() string {
 	case OpMapSet: return "MSET"
 	case OpMapHas: return "MHAS"
 	case OpMapDel: return "MDEL"
+	case OpMapGetConst: return "MGETC"
 	default: return fmt.Sprintf("UNKNOWN(%d)", o)
 	}
 }

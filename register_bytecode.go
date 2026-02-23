@@ -35,30 +35,54 @@ const (
 
 func (o ROpCode) String() string {
 	switch o {
-	case ROpLoadConst: return "LOADC"
-	case ROpGetGlobal: return "GETG"
-	case ROpSetGlobal: return "SETG"
-	case ROpMove: return "MOVE"
-	case ROpAdd: return "ADD"
-	case ROpSub: return "SUB"
-	case ROpMul: return "MUL"
-	case ROpDiv: return "DIV"
-	case ROpMod: return "MOD"
-	case ROpEqual: return "EQ"
-	case ROpGreater: return "GT"
-	case ROpLess: return "LT"
-	case ROpGreaterEqual: return "GE"
-	case ROpLessEqual: return "LE"
-	case ROpAnd: return "AND"
-	case ROpOr: return "OR"
-	case ROpNot: return "NOT"
-	case ROpJump: return "JUMP"
-	case ROpJumpIfFalse: return "JIF"
-	case ROpJumpIfTrue: return "JIT"
-	case ROpCall: return "CALL"
-	case ROpConcat: return "CONCAT"
-	case ROpReturn: return "RET"
-	default: return fmt.Sprintf("RUNKNOWN(%d)", o)
+	case ROpLoadConst:
+		return "LOADC"
+	case ROpGetGlobal:
+		return "GETG"
+	case ROpSetGlobal:
+		return "SETG"
+	case ROpMove:
+		return "MOVE"
+	case ROpAdd:
+		return "ADD"
+	case ROpSub:
+		return "SUB"
+	case ROpMul:
+		return "MUL"
+	case ROpDiv:
+		return "DIV"
+	case ROpMod:
+		return "MOD"
+	case ROpEqual:
+		return "EQ"
+	case ROpGreater:
+		return "GT"
+	case ROpLess:
+		return "LT"
+	case ROpGreaterEqual:
+		return "GE"
+	case ROpLessEqual:
+		return "LE"
+	case ROpAnd:
+		return "AND"
+	case ROpOr:
+		return "OR"
+	case ROpNot:
+		return "NOT"
+	case ROpJump:
+		return "JUMP"
+	case ROpJumpIfFalse:
+		return "JIF"
+	case ROpJumpIfTrue:
+		return "JIT"
+	case ROpCall:
+		return "CALL"
+	case ROpConcat:
+		return "CONCAT"
+	case ROpReturn:
+		return "RET"
+	default:
+		return fmt.Sprintf("RUNKNOWN(%d)", o)
 	}
 }
 
