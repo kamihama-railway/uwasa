@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Uwasa 可视化表达式构建器 Pro</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap');
+        body { font-family: 'Inter', system-ui, -apple-system, sans-serif; }
+        .font-mono { font-family: 'JetBrains Mono', monospace; }
+
+        /* 极致的玻璃拟态与阴影 */
+        .glass {
+            background: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+
+        /* 节点基础样式 */
+        .node {
+            position: relative;
+            display: inline-flex;
+            flex-direction: column;
+            padding: 8px 12px;
+            margin: 4px;
+            border-radius: 12px;
+            border: 2px solid transparent;
+            background: white;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            user-select: none;
+        }
+        .node:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+            border-color: #e2e8f0;
+        }
+        .node.selected {
+            border-color: #3b82f6;
+            ring: 4px;
+            ring-color: rgba(59, 130, 246, 0.1);
+        }
+
+        /* 类型色彩 */
+        .t-literal { border-left-width: 6px; border-left-color: #f59e0b; }
+        .t-variable { border-left-width: 6px; border-left-color: #3b82f6; }
+        .t-operator { border-left-width: 6px; border-left-color: #a855f7; }
+        .t-control { border-left-width: 6px; border-left-color: #10b981; }
+        .t-call { border-left-width: 6px; border-left-color: #6366f1; }
+        .t-group { border-left-width: 6px; border-left-color: #64748b; }
+
+        /* 插入点 */
+        .drop-zone {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 32px;
+            height: 32px;
+            margin: 4px;
+            border: 2px dashed #cbd5e1;
+            border-radius: 50%;
+            color: #94a3b8;
+            cursor: pointer;
+            transition: all 0.2s;
+            background: #f8fafc;
+        }
+        .drop-zone:hover, .drop-zone.active {
+            border-color: #3b82f6;
+            color: #3b82f6;
+            background: #eff6ff;
+            transform: scale(1.1);
+        }
+        .drop-zone.active {
+            box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.2);
+        }
+
+        /* 动画 */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: scale(0.95); }
+            to { opacity: 1; transform: scale(1); }
+        }
+        .animate-in { animation: fadeIn 0.2s ease-out forwards; }
+
+        /* 自定义滚动条 */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-900 min-h-screen">
+
+    <!-- 顶部导航 -->
+    <nav class="sticky top-0 z-50 glass border-b px-6 py-3 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+            <div class="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-200">
+                <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+            </div>
+            <div>
+                <h1 class="font-black text-xl tracking-tight text-slate-800">Uwasa Builder <span class="text-blue-600 text-sm font-bold uppercase ml-1">Pro</span></h1>
+                <p class="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Visual Expression Engine</p>
+            </div>
+        </div>
+        <div class="flex gap-3">
+            <button onclick="Builder.loadExample()" class="px-4 py-2 hover:bg-slate-100 rounded-xl text-sm font-bold transition">加载示例</button>
+            <button onclick="Builder.clear()" class="px-4 py-2 text-red-500 hover:bg-red-50 rounded-xl text-sm font-bold transition">清空</button>
+        </div>
+    </nav>
+
+    <div class="max-w-[1600px] mx-auto p-6 grid grid-cols-12 gap-6">
+
+        <!-- 左侧：组件库 -->
+        <aside class="col-span-12 lg:col-span-3 space-y-6">
+            <div class="bg-white p-5 rounded-3xl shadow-sm border border-slate-200">
+                <h3 class="text-xs font-black text-slate-400 uppercase tracking-[0.2em] mb-4">组件库</h3>
+                <div id="toolbar" class="space-y-2">
+                    <!-- 动态生成按钮 -->
+                </div>
+            </div>
+
+            <div class="bg-blue-600 p-6 rounded-3xl shadow-xl shadow-blue-200 text-white relative overflow-hidden">
+                <div class="relative z-10">
+                    <h4 class="font-bold text-lg mb-2">执行逻辑 Q&A</h4>
+                    <p class="text-sm text-blue-100 leading-relaxed mb-4">
+                        问：<code class="bg-blue-700 px-1 rounded">if ? is ? else is if ? then ?</code> 是什么效果？
+                    </p>
+                    <p class="text-xs text-blue-50 leading-relaxed italic">
+                        答：这是一个典型的嵌套表达式。如果第一层条件不满足，引擎会进入 <code class="bg-blue-700 px-1 rounded">else is</code> 分支，随后评估内部的 <code class="bg-blue-700 px-1 rounded">if-then</code>。如果第二层条件满足则执行动作，否则最终返回 <code class="bg-blue-700 px-1 rounded">nil</code>。
+                    </p>
+                </div>
+                <svg class="absolute -bottom-4 -right-4 w-24 h-24 text-blue-500 opacity-20" fill="currentColor" viewBox="0 0 20 20"><path d="M11 3a1 1 0 10-2 0v1a1 1 0 102 0V3zM15.657 5.757a1 1 0 00-1.414-1.414l-.707.707a1 1 0 001.414 1.414l.707-.707zM18 10a1 1 0 01-1 1h-1a1 1 0 110-2h1a1 1 0 011 1zM5.05 6.464A1 1 0 106.464 5.05l-.707-.707a1 1 0 00-1.414 1.414l.707.707zM5 10a1 1 0 01-1 1H3a1 1 0 110-2h1a1 1 0 011 1zM8 16v-1a1 1 0 112 0v1a1 1 0 11-2 0zM13.536 14.95a1 1 0 011.414 0l.707.707a1 1 0 11-1.414 1.414l-.707-.707a1 1 0 010-1.414zM15.657 14.243a1 1 0 10-1.414 1.414l.707.707a1 1 0 001.414-1.414l-.707-.707z"></path></svg>
+            </div>
+        </aside>
+
+        <!-- 中间：画布 -->
+        <main class="col-span-12 lg:col-span-9 space-y-6">
+            <div class="bg-white rounded-[2rem] shadow-sm border border-slate-200 overflow-hidden flex flex-col min-h-[600px]">
+                <div class="px-8 py-4 border-b bg-slate-50/50 flex items-center justify-between">
+                    <div class="flex items-center gap-4">
+                        <div class="flex gap-2">
+                            <div class="w-3 h-3 rounded-full bg-red-400"></div>
+                            <div class="w-3 h-3 rounded-full bg-amber-400"></div>
+                            <div class="w-3 h-3 rounded-full bg-emerald-400"></div>
+                        </div>
+                        <span class="text-sm font-black text-slate-400 uppercase tracking-widest">Main Canvas</span>
+                    </div>
+                    <div id="hint" class="text-xs font-bold text-blue-500 bg-blue-50 px-4 py-1.5 rounded-full transition-all opacity-0">
+                        点击蓝色圆圈插入组件
+                    </div>
+                </div>
+                <div id="canvas" onclick="Builder.handleCanvasClick(event)" class="flex-grow p-12 overflow-auto flex items-start justify-start content-start flex-wrap gap-6 bg-[radial-gradient(#e2e8f0_1px,transparent_1px)] [background-size:24px_24px]">
+                    <!-- 动态生成 -->
+                </div>
+            </div>
+
+            <!-- 底部：预览 -->
+            <div class="bg-slate-900 rounded-[2rem] shadow-2xl border border-slate-800 overflow-hidden">
+                <div class="px-8 py-5 border-b border-slate-800 flex items-center justify-between bg-black/20">
+                    <div class="flex items-center gap-3">
+                        <div class="p-2 bg-emerald-500/10 rounded-lg">
+                            <svg class="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg>
+                        </div>
+                        <h2 class="text-sm font-black text-slate-300 uppercase tracking-widest">Uwasa Code</h2>
+                    </div>
+                    <button onclick="Builder.copy()" class="group flex items-center gap-2 px-6 py-2 bg-slate-800 hover:bg-emerald-600 text-white rounded-xl text-xs font-bold transition-all">
+                        <span>复制结果</span>
+                        <svg class="w-4 h-4 group-hover:rotate-12 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path></svg>
+                    </button>
+                </div>
+                <div class="p-10 font-mono">
+                    <pre id="output" class="text-emerald-400 text-xl leading-relaxed break-all whitespace-pre-wrap selection:bg-emerald-500/30">// 等待构建...</pre>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        const escape = (str) => String(str).replace(/"/g, '&quot;');
+
+        /**
+         * 模块化组件注册系统
+         */
+        const ComponentRegistry = {
+            'literal': {
+                name: '字面量',
+                category: 'literal',
+                color: 'amber',
+                default: { value: '0', valueType: 'number' },
+                render: (node, ctx) => `
+                    <div class="flex items-center gap-2">
+                        <input type="text" value="${escape(node.data.value)}"
+                               oninput="Builder.updateNode('${node.id}', {value: this.value})"
+                               class="w-24 px-2 py-1 bg-slate-50 border rounded-lg text-sm font-bold outline-none focus:ring-2 focus:ring-amber-200">
+                        <select onchange="Builder.updateNode('${node.id}', {valueType: this.value})"
+                                class="text-[10px] font-black uppercase text-slate-400 bg-transparent cursor-pointer">
+                            ${['number', 'string', 'boolean', 'nil'].map(t => `<option value="${t}" ${node.data.valueType === t ? 'selected' : ''}>${t}</option>`).join('')}
+                        </select>
+                    </div>`,
+                generate: (node) => {
+                    if (node.data.valueType === 'nil') return 'nil';
+                    if (node.data.valueType === 'string') return `"${node.data.value}"`;
+                    if (node.data.valueType === 'boolean') return (node.data.value === 'true' || node.data.value === '1') ? 'true' : 'false';
+                    return node.data.value || '0';
+                }
+            },
+            'variable': {
+                name: '变量',
+                category: 'variable',
+                color: 'blue',
+                default: { name: 'x' },
+                render: (node, ctx) => `
+                    <div class="flex items-center gap-2">
+                        <span class="text-blue-500 font-bold">$</span>
+                        <input type="text" value="${escape(node.data.name)}"
+                               oninput="Builder.updateNode('${node.id}', {name: this.value})"
+                               class="w-24 px-2 py-1 bg-slate-50 border rounded-lg text-sm font-bold text-blue-600 outline-none focus:ring-2 focus:ring-blue-200">
+                    </div>`,
+                generate: (node) => node.data.name || 'x'
+            },
+            'binary': {
+                name: '二元运算',
+                category: 'operator',
+                color: 'purple',
+                default: { op: '==' },
+                children: ['left', 'right'],
+                render: (node, ctx) => `
+                    <div class="flex items-center gap-3">
+                        ${ctx.child('left')}
+                        <select onchange="Builder.updateNode('${node.id}', {op: this.value})"
+                                class="px-2 py-1 bg-purple-100 text-purple-700 rounded-lg font-black text-sm outline-none">
+                            ${['+', '-', '*', '/', '%', '==', '>', '<', '>=', '<=', '&&', '||'].map(op => `<option value="${op}" ${node.data.op === op ? 'selected' : ''}>${op}</option>`).join('')}
+                        </select>
+                        ${ctx.child('right')}
+                    </div>`,
+                generate: (node, gen) => `${gen(node.children.left)} ${node.data.op} ${gen(node.children.right)}`
+            },
+            'unary': {
+                name: '一元运算',
+                category: 'operator',
+                color: 'slate',
+                default: { op: '!' },
+                children: ['right'],
+                render: (node, ctx) => `
+                    <div class="flex items-center gap-2">
+                        <select onchange="Builder.updateNode('${node.id}', {op: this.value})"
+                                class="px-2 py-1 bg-slate-200 text-slate-700 rounded-lg font-black text-sm outline-none">
+                            ${['!', '-'].map(op => `<option value="${op}" ${node.data.op === op ? 'selected' : ''}>${op}</option>`).join('')}
+                        </select>
+                        ${ctx.child('right')}
+                    </div>`,
+                generate: (node, gen) => `${node.data.op}${gen(node.children.right)}`
+            },
+            'group': {
+                name: '括号',
+                category: 'group',
+                color: 'slate',
+                children: ['inner'],
+                render: (node, ctx) => `
+                    <div class="flex items-center gap-1">
+                        <span class="text-2xl font-light text-slate-300">(</span>
+                        ${ctx.child('inner')}
+                        <span class="text-2xl font-light text-slate-300">)</span>
+                    </div>`,
+                generate: (node, gen) => `(${gen(node.children.inner)})`
+            },
+            'if_is': {
+                name: '条件分支 (Is)',
+                category: 'control',
+                color: 'emerald',
+                children: ['cond', 'conseq', 'alt'],
+                render: (node, ctx) => `
+                    <div class="flex flex-col gap-2">
+                        <div class="flex items-center gap-2">
+                            <span class="text-xs font-black text-emerald-500 uppercase">if</span>
+                            ${ctx.child('cond')}
+                            <span class="text-xs font-black text-emerald-500 uppercase">is</span>
+                            ${ctx.child('conseq')}
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <span class="text-xs font-black text-emerald-400 uppercase">else</span>
+                            ${ctx.child('alt')}
+                        </div>
+                    </div>`,
+                generate: (node, gen) => {
+                    let res = `if ${gen(node.children.cond)} is ${gen(node.children.conseq)}`;
+                    if (node.children.alt) {
+                        const alt = node.children.alt;
+                        const altCode = gen(alt);
+                        res += (alt.type === 'if_is' || alt.type === 'if_then') ? ` else ${altCode}` : ` else is ${altCode}`;
+                    }
+                    return res;
+                }
+            },
+            'if_simple': {
+                name: '简单 If (布尔)',
+                category: 'control',
+                color: 'emerald',
+                children: ['cond'],
+                render: (node, ctx) => `
+                    <div class="flex items-center gap-2">
+                        <span class="text-xs font-black text-emerald-500 uppercase">if</span>
+                        ${ctx.child('cond')}
+                    </div>`,
+                generate: (node, gen) => `if ${gen(node.children.cond)}`
+            },
+            'if_then': {
+                name: '条件执行 (Then)',
+                category: 'control',
+                color: 'emerald',
+                children: ['cond', 'conseq'],
+                render: (node, ctx) => `
+                    <div class="flex items-center gap-2">
+                        <span class="text-xs font-black text-emerald-500 uppercase">if</span>
+                        ${ctx.child('cond')}
+                        <span class="text-xs font-black text-emerald-500 uppercase">then</span>
+                        ${ctx.child('conseq')}
+                    </div>`,
+                generate: (node, gen) => `if ${gen(node.children.cond)} then ${gen(node.children.conseq)}`
+            },
+            'assign': {
+                name: '变量赋值',
+                category: 'control',
+                color: 'rose',
+                default: { name: 'res' },
+                children: ['value'],
+                render: (node, ctx) => `
+                    <div class="flex items-center gap-2">
+                        <input type="text" value="${escape(node.data.name)}"
+                               oninput="Builder.updateNode('${node.id}', {name: this.value})"
+                               class="w-20 px-2 py-1 bg-white border border-rose-200 rounded-lg text-sm font-bold text-rose-600 outline-none">
+                        <span class="font-bold text-slate-300">=</span>
+                        ${ctx.child('value')}
+                    </div>`,
+                generate: (node, gen) => `${node.data.name || 'res'} = ${gen(node.children.value)}`
+            },
+            'call': {
+                name: '内置函数',
+                category: 'call',
+                color: 'indigo',
+                default: { name: 'concat' },
+                children: ['args'], // args will be handled specially
+                render: (node, ctx) => {
+                    let argsHtml = '';
+                    const args = node.children.args || [];
+                    args.forEach((arg, i) => {
+                        argsHtml += ctx.dz('args', i);
+                        argsHtml += `<div class="flex items-center">${Builder.renderNodeHTML(arg)}</div>`;
+                        if (i < args.length - 1) argsHtml += '<span class="mx-0.5 text-slate-300">,</span>';
+                    });
+
+                    return `
+                        <div class="flex items-center gap-1">
+                            <input type="text" value="${escape(node.data.name)}"
+                                   oninput="Builder.updateNode('${node.id}', {name: this.value})"
+                                   class="bg-transparent border-none text-indigo-700 font-black text-sm w-16 p-0 outline-none focus:ring-0">
+                            <span class="text-indigo-300 font-bold">(</span>
+                            <div class="flex items-center">${argsHtml}</div>
+                            ${ctx.dz('args', args.length)}
+                            <span class="text-indigo-300 font-bold">)</span>
+                        </div>`;
+                },
+                generate: (node, gen) => {
+                    const args = (node.children.args || []).map(a => gen(a)).join(', ');
+                    return `${node.data.name || 'concat'}(${args})`;
+                }
+            }
+        };
+
+        /**
+         * 引擎核心逻辑
+         */
+        const Builder = {
+            state: { root: null },
+            nextId: 1,
+            selectedDZ: null,
+            selectedNodeId: null,
+
+            init() {
+                this.renderToolbar();
+                this.render();
+                window.addEventListener('keydown', (e) => {
+                    if (e.key === 'Delete' || e.key === 'Backspace') {
+                        if (this.selectedNodeId && !['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
+                            this.removeNode(this.selectedNodeId);
+                            this.selectedNodeId = null;
+                        }
+                    }
+                });
+            },
+
+            renderToolbar() {
+                const container = document.getElementById('toolbar');
+                Object.entries(ComponentRegistry).forEach(([type, cfg]) => {
+                    const btn = document.createElement('button');
+                    btn.className = `w-full group flex items-center justify-between px-5 py-4 bg-${cfg.color}-50 hover:bg-${cfg.color}-100 text-${cfg.color}-900 rounded-2xl transition-all border border-${cfg.color}-100/50`;
+                    btn.onclick = () => this.addNode(type);
+                    btn.innerHTML = `
+                        <div class="flex flex-col items-start">
+                            <span class="font-black text-sm tracking-tight">${cfg.name}</span>
+                            <span class="text-[9px] uppercase font-bold opacity-40">${type}</span>
+                        </div>
+                        <span class="text-${cfg.color}-300 group-hover:translate-x-1 transition-transform">→</span>
+                    `;
+                    container.appendChild(btn);
+                });
+            },
+
+            addNode(type) {
+                const config = ComponentRegistry[type];
+                const node = {
+                    id: `n${this.nextId++}`,
+                    type: type,
+                    data: { ...config.default },
+                    children: {}
+                };
+
+                if (config.children) {
+                    config.children.forEach(c => node.children[c] = (c === 'args' ? [] : null));
+                }
+
+                if (!this.state.root) {
+                    this.state.root = node;
+                } else if (this.selectedNodeId) {
+                    // Replace logic
+                    if (this.state.root.id === this.selectedNodeId) {
+                        this.state.root = node;
+                    } else {
+                        const parent = this.findParent(this.state.root, this.selectedNodeId);
+                        for (let k in parent.children) {
+                            if (Array.isArray(parent.children[k])) {
+                                const idx = parent.children[k].findIndex(c => c.id === this.selectedNodeId);
+                                if (idx !== -1) parent.children[k][idx] = node;
+                            } else if (parent.children[k] && parent.children[k].id === this.selectedNodeId) {
+                                parent.children[k] = node;
+                            }
+                        }
+                    }
+                } else if (this.selectedDZ) {
+                    const [parentId, role, index] = this.selectedDZ.split(':');
+                    const parent = this.findNode(this.state.root, parentId);
+                    if (parent) {
+                        if (role === 'args') parent.children.args.splice(index, 0, node);
+                        else parent.children[role] = node;
+                    }
+                } else {
+                    this.showHint("请先点击蓝色圆圈或现有组件");
+                    return;
+                }
+
+                this.selectedDZ = null;
+                this.selectedNodeId = null;
+                this.render();
+            },
+
+            updateNode(id, newData) {
+                const node = this.findNode(this.state.root, id);
+                if (node) {
+                    Object.assign(node.data, newData);
+                    this.updateCode();
+                }
+            },
+
+            removeNode(id) {
+                if (this.state.root && this.state.root.id === id) {
+                    this.state.root = null;
+                } else {
+                    const parent = this.findParent(this.state.root, id);
+                    if (parent) {
+                        for (let k in parent.children) {
+                            if (Array.isArray(parent.children[k])) {
+                                parent.children[k] = parent.children[k].filter(c => c.id !== id);
+                            } else if (parent.children[k] && parent.children[k].id === id) {
+                                parent.children[k] = null;
+                            }
+                        }
+                    }
+                }
+                this.render();
+            },
+
+            findNode(root, id) {
+                if (!root) return null;
+                if (root.id === id) return root;
+                for (let k in root.children) {
+                    const child = root.children[k];
+                    if (Array.isArray(child)) {
+                        for (let c of child) {
+                            const found = this.findNode(c, id);
+                            if (found) return found;
+                        }
+                    } else {
+                        const found = this.findNode(child, id);
+                        if (found) return found;
+                    }
+                }
+                return null;
+            },
+
+            findParent(root, childId) {
+                if (!root) return null;
+                for (let k in root.children) {
+                    const child = root.children[k];
+                    if (Array.isArray(child)) {
+                        if (child.some(c => c.id === childId)) return root;
+                        for (let c of child) {
+                            const found = this.findParent(c, childId);
+                            if (found) return found;
+                        }
+                    } else if (child && child.id === childId) {
+                        return root;
+                    } else {
+                        const found = this.findParent(child, childId);
+                        if (found) return found;
+                    }
+                }
+                return null;
+            },
+
+            handleCanvasClick(e) {
+                // Ignore input/select clicks to allow normal interaction
+                if (['INPUT', 'SELECT', 'OPTION'].includes(e.target.tagName)) return;
+
+                // Event Delegation
+                const dz = e.target.closest('.drop-zone');
+                if (dz) {
+                    this.selectDZ(dz.dataset.dz);
+                    return;
+                }
+
+                const nodeEl = e.target.closest('.node');
+                if (nodeEl) {
+                    const removeBtn = e.target.closest('.remove-btn');
+                    if (removeBtn) {
+                        this.removeNode(nodeEl.dataset.id);
+                        return;
+                    }
+                    this.selectNode(nodeEl.dataset.id);
+                    return;
+                }
+            },
+
+            selectDZ(dzId) {
+                this.selectedDZ = dzId;
+                this.selectedNodeId = null;
+                this.clearSelection();
+                const el = document.querySelector(`[data-dz="${dzId}"]`);
+                if (el) el.classList.add('active');
+                this.showHint("位置已锁定，请在左侧选择组件");
+            },
+
+            selectNode(id) {
+                this.selectedNodeId = id;
+                this.selectedDZ = null;
+                this.clearSelection();
+                const el = document.querySelector(`[data-id="${id}"]`);
+                if (el) el.classList.add('selected', 'ring-4', 'ring-blue-200');
+                this.showHint("已选择组件，再次点击左侧可替换它");
+            },
+
+            clearSelection() {
+                document.querySelectorAll('.drop-zone').forEach(el => el.classList.remove('active'));
+                document.querySelectorAll('.node').forEach(el => el.classList.remove('selected', 'ring-4', 'ring-blue-200'));
+            },
+
+            render() {
+                const container = document.getElementById('canvas');
+
+                if (!this.state.root) {
+                    container.innerHTML = this.createDZHTML('root', 'root', 0);
+                } else {
+                    container.innerHTML = this.renderNodeHTML(this.state.root);
+                }
+
+                this.updateCode();
+            },
+
+            renderNodeHTML(node) {
+                if (!node) return '';
+                const config = ComponentRegistry[node.type];
+
+                const isSelected = this.selectedNodeId === node.id;
+
+                const ctx = {
+                    child: (role) => {
+                        const childNode = node.children[role];
+                        return childNode ? this.renderNodeHTML(childNode) : this.createDZHTML(node.id, role, 0);
+                    },
+                    dz: (role, idx) => this.createDZHTML(node.id, role, idx)
+                };
+
+                return `
+                    <div class="node t-${config.category} animate-in ${isSelected ? 'selected ring-4 ring-blue-200' : ''}"
+                         data-id="${node.id}" id="node-${node.id}">
+                        <div class="flex items-center justify-between mb-2 gap-4 pointer-events-none">
+                            <span class="text-[9px] font-black uppercase tracking-widest text-slate-300">${node.type.replace('_', ' ')}</span>
+                            <button class="remove-btn pointer-events-auto text-slate-200 hover:text-red-400 transition-colors">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                            </button>
+                        </div>
+                        <div class="flex items-center flex-wrap">
+                            ${config.render(node, ctx)}
+                        </div>
+                    </div>
+                `;
+            },
+
+            createDZHTML(parentId, role, index) {
+                const dzId = `${parentId}:${role}:${index}`;
+                const isActive = this.selectedDZ === dzId;
+                return `
+                    <div class="drop-zone ${isActive ? 'active' : ''}" data-dz="${dzId}" id="dz-${dzId}">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M12 4v16m8-8H4"></path></svg>
+                    </div>
+                `;
+            },
+
+            generate(node) {
+                if (!node) return '?';
+                const config = ComponentRegistry[node.type];
+                return config.generate(node, (n) => this.generate(n));
+            },
+
+            updateCode() {
+                const code = this.state.root ? this.generate(this.state.root) : '// 拖放组件以开始构建';
+                document.getElementById('output').innerText = code;
+            },
+
+            showHint(text) {
+                const el = document.getElementById('hint');
+                el.innerText = text;
+                el.style.opacity = 1;
+                setTimeout(() => el.style.opacity = 0, 3000);
+            },
+
+            copy() {
+                const code = document.getElementById('output').innerText;
+                navigator.clipboard.writeText(code).then(() => {
+                    this.showHint("代码已复制到剪贴板");
+                });
+            },
+
+            clear() {
+                if (confirm('确认清空画布？')) {
+                    this.state.root = null;
+                    this.selectedDZ = null;
+                    this.render();
+                }
+            },
+
+            loadExample() {
+                // if score >= 60 is "pass" else if score < 40 then fail_alert()
+                // Added a simple if check at the end for demonstration
+                this.state.root = {
+                    id: 'e1', type: 'if_is',
+                    children: {
+                        cond: {
+                            id: 'e2', type: 'binary', data: { op: '>=' },
+                            children: {
+                                left: { id: 'e3', type: 'variable', data: { name: 'score' }, children: {} },
+                                right: { id: 'e4', type: 'literal', data: { value: '60', valueType: 'number' }, children: {} }
+                            }
+                        },
+                        conseq: { id: 'e5', type: 'literal', data: { value: 'pass', valueType: 'string' }, children: {} },
+                        alt: {
+                            id: 'e6', type: 'if_is',
+                            children: {
+                                cond: {
+                                    id: 'e7', type: 'binary', data: { op: '<' },
+                                    children: {
+                                        left: { id: 'e8', type: 'variable', data: { name: 'score' }, children: {} },
+                                        right: { id: 'e9', type: 'literal', data: { value: '40', valueType: 'number' }, children: {} }
+                                    }
+                                },
+                                conseq: {
+                                    id: 'e10', type: 'if_then',
+                                    children: {
+                                        cond: { id: 'e11', type: 'if_simple', children: { cond: { id: 'e12', type: 'variable', data: { name: 'urgent' } } } },
+                                        conseq: { id: 'e13', type: 'call', data: { name: 'fail_alert' }, children: { args: [] } }
+                                    }
+                                },
+                                alt: { id: 'e14', type: 'literal', data: { valueType: 'nil' } }
+                            }
+                        }
+                    }
+                };
+                this.nextId = 20;
+                this.render();
+            }
+        };
+
+        // 启动构建器
+        Builder.init();
+    </script>
+</body>
+</html>

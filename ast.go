@@ -136,3 +136,33 @@ func (ce *CallExpression) String() string {
 	out.WriteString(")")
 	return out.String()
 }
+
+type SequenceExpression struct {
+	Left  Expression
+	Right Expression
+}
+
+func (se *SequenceExpression) expressionNode() {}
+func (se *SequenceExpression) String() string {
+	return "(" + se.Left.String() + " => " + se.Right.String() + ")"
+}
+
+type MemberCallExpression struct {
+	Object    Expression
+	Method    string
+	Arguments []Expression
+}
+
+func (me *MemberCallExpression) expressionNode() {}
+func (me *MemberCallExpression) String() string {
+	var out strings.Builder
+	out.WriteString(me.Object.String() + "." + me.Method + "(")
+	for i, arg := range me.Arguments {
+		out.WriteString(arg.String())
+		if i < len(me.Arguments)-1 {
+			out.WriteString(", ")
+		}
+	}
+	out.WriteString(")")
+	return out.String()
+}

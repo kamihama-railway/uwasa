@@ -12,19 +12,22 @@ import (
 const (
 	_ int = iota
 	LOWEST
-	ASSIGN
-	OR
-	AND
-	EQUALS
+	SEQUENCE // =>
+	ASSIGN   // =
+	OR       // ||
+	AND      // &&
+	EQUALS   // ==
 	LESSGREATER
 	SUM
 	PRODUCT
 	PREFIX
-	CALL
+	CALL // . and (
 )
 
 func getPrecedence(t TokenType) int {
 	switch t {
+	case TokenSequence:
+		return SEQUENCE
 	case TokenAssign:
 		return ASSIGN
 	case TokenOr:
@@ -39,7 +42,7 @@ func getPrecedence(t TokenType) int {
 		return SUM
 	case TokenAsterisk, TokenSlash, TokenPercent:
 		return PRODUCT
-	case TokenLParen:
+	case TokenLParen, TokenDot:
 		return CALL
 	default:
 		return LOWEST
@@ -47,10 +50,10 @@ func getPrecedence(t TokenType) int {
 }
 
 type Parser struct {
-	l      *Lexer
-	curTok Token
+	l       *Lexer
+	curTok  Token
 	peekTok Token
-	errors []string
+	errors  []string
 
 	prefixParseFns map[TokenType]prefixParseFn
 	infixParseFns  map[TokenType]infixParseFn
@@ -91,6 +94,8 @@ var parserPool = sync.Pool{
 		p.registerInfix(TokenPercent, p.parseInfixExpression)
 		p.registerInfix(TokenLParen, p.parseCallExpression)
 		p.registerInfix(TokenAssign, p.parseAssignExpression)
+		p.registerInfix(TokenDot, p.parseMemberCallExpression)
+		p.registerInfix(TokenSequence, p.parseSequenceExpression)
 
 		return p
 	},
@@ -212,6 +217,39 @@ func (p *Parser) parseCallExpression(function Expression) Expression {
 	return exp
 }
 
+func (p *Parser) parseMemberCallExpression(left Expression) Expression {
+	// 强制校验：左侧必须是标识符
+	if _, ok := left.(*Identifier); !ok {
+		p.errors = append(p.errors, "member call subject must be an identifier")
+		return nil
+	}
+
+	p.nextToken() // cur is identifier (method name)
+	if !p.curTokenIs(TokenIdent) {
+		p.errors = append(p.errors, "expected method name after '.'")
+		return nil
+	}
+	method := p.curTok.Literal
+
+	if !p.expectPeek(TokenLParen) {
+		return nil
+	}
+
+	exp := &MemberCallExpression{Object: left, Method: method}
+	exp.Arguments = p.parseExpressionList(TokenRParen)
+	return exp
+}
+
+func (p *Parser) parseSequenceExpression(left Expression) Expression {
+	expression := &SequenceExpression{
+		Left: left,
+	}
+	precedence := p.curPrecedence()
+	p.nextToken()
+	expression.Right = p.parseExpression(precedence)
+	return expression
+}
+
 func (p *Parser) parseExpressionList(end TokenType) []Expression {
 	list := []Expression{}
 
@@ -244,7 +282,7 @@ func (p *Parser) parseAssignExpression(left Expression) Expression {
 	}
 	expression := &AssignExpression{Name: ident}
 	p.nextToken()
-	expression.Value = p.parseExpression(LOWEST)
+	expression.Value = p.parseExpression(ASSIGN - 1)
 	return expression
 }
 
@@ -279,7 +317,20 @@ func (p *Parser) parseIfExpression() Expression {
 		p.nextToken() // move to expression after 'then'
 		expression.Consequence = p.parseExpression(LOWEST)
 		expression.IsThen = true
-		// No 'else' mentioned for 'then' in spec, but we could support it
+
+		if p.peekTokenIs(TokenElse) {
+			p.nextToken() // cur is 'else'
+			if p.peekTokenIs(TokenIf) {
+				p.nextToken() // cur is 'if'
+				expression.Alternative = p.parseIfExpression()
+			} else if p.peekTokenIs(TokenIs) {
+				p.nextToken() // cur is 'is'
+				p.nextToken() // move to expression after 'is'
+				expression.Alternative = p.parseExpression(LOWEST)
+			} else {
+				p.errors = append(p.errors, "expected 'if' or 'is' after 'else'")
+			}
+		}
 	} else {
 		// Simple 'if <cond>'
 		expression.IsSimple = true

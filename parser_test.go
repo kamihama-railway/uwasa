@@ -160,3 +160,40 @@ func TestParserErrors(t *testing.T) {
 		}
 	}
 }
+
+func TestParserNewSyntax(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"m.get(\"k\")", "m.get(k)"},
+		{"m.has(\"k\")", "m.has(k)"},
+		{"m.set(\"k\", 1)", "m.set(k, 1)"},
+		{"m.del(\"k\")", "m.del(k)"},
+		{"a = 1 => b = 2", "((a = 1) => (b = 2))"},
+		{"a = 1 => b = 2 => c = 3", "(((a = 1) => (b = 2)) => (c = 3))"},
+		{"if a == 0 then a = 1 => b = 2", "if (a == 0) then ((a = 1) => (b = 2))"},
+		{"m.get(\"k\").get(\"s\")", ""}, // Should fail (not identifier)
+	}
+
+	for _, tt := range tests {
+		l := NewLexer(tt.input)
+		p := NewParser(l)
+		program := p.ParseProgram()
+
+		if tt.expected == "" {
+			if len(p.Errors()) == 0 {
+				t.Errorf("input %q should have errors", tt.input)
+			}
+			continue
+		}
+
+		if len(p.Errors()) != 0 {
+			t.Errorf("input %q has errors: %v", tt.input, p.Errors())
+			continue
+		}
+		if program.String() != tt.expected {
+			t.Errorf("expected=%q, got=%q", tt.expected, program.String())
+		}
+	}
+}

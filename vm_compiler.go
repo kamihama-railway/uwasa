@@ -88,9 +88,12 @@ func (c *VMCompiler) peephole() {
 				// GetGlobal + Push + Compare -> CompareGlobalConst
 				op := OpCode(0)
 				switch c.instructions[i+2].Op {
-				case OpEqual: op = OpEqualGlobalConst
-				case OpGreater: op = OpGreaterGlobalConst
-				case OpLess: op = OpLessGlobalConst
+				case OpEqual:
+					op = OpEqualGlobalConst
+				case OpGreater:
+					op = OpGreaterGlobalConst
+				case OpLess:
+					op = OpLessGlobalConst
 				}
 
 				if op != 0 {
@@ -130,8 +133,10 @@ func (c *VMCompiler) peephole() {
 			if gIdx < 65536 && jTarget < 65536 {
 				op := OpCode(0)
 				switch c.instructions[i+1].Op {
-				case OpJumpIfFalse: op = OpGetGlobalJumpIfFalse
-				case OpJumpIfTrue: op = OpGetGlobalJumpIfTrue
+				case OpJumpIfFalse:
+					op = OpGetGlobalJumpIfFalse
+				case OpJumpIfTrue:
+					op = OpGetGlobalJumpIfTrue
 				}
 
 				if op != 0 {
@@ -193,7 +198,9 @@ func (c *VMCompiler) optimize(node Node) (Node, error) {
 }
 
 func (c *VMCompiler) simplify(node Node) Node {
-	if node == nil { return nil }
+	if node == nil {
+		return nil
+	}
 	switch n := node.(type) {
 	case *PrefixExpression:
 		n.Right = c.simplify(n.Right).(Expression)
@@ -210,23 +217,37 @@ func (c *VMCompiler) simplify(node Node) Node {
 
 		switch n.Operator {
 		case "+":
-			if isZero(n.Left) { return n.Right }
-			if isZero(n.Right) { return n.Left }
+			if isZero(n.Left) {
+				return n.Right
+			}
+			if isZero(n.Right) {
+				return n.Left
+			}
 		case "-":
-			if isZero(n.Right) { return n.Left }
+			if isZero(n.Right) {
+				return n.Left
+			}
 			if isSameIdentifier(n.Left, n.Right) {
 				return &NumberLiteral{Int64Value: 0, IsInt: true}
 			}
 		case "*":
-			if isZero(n.Left) || isZero(n.Right) { return &NumberLiteral{Int64Value: 0, IsInt: true} }
-			if isOne(n.Left) { return n.Right }
-			if isOne(n.Right) { return n.Left }
+			if isZero(n.Left) || isZero(n.Right) {
+				return &NumberLiteral{Int64Value: 0, IsInt: true}
+			}
+			if isOne(n.Left) {
+				return n.Right
+			}
+			if isOne(n.Right) {
+				return n.Left
+			}
 		case "/":
 			if isZero(n.Right) {
 				c.errors = append(c.errors, "division by zero")
 				return n
 			}
-			if isOne(n.Right) { return n.Left }
+			if isOne(n.Right) {
+				return n.Left
+			}
 			if isSameIdentifier(n.Left, n.Right) && !hasSideEffects(n.Left) {
 				return &NumberLiteral{Int64Value: 1, IsInt: true}
 			}
@@ -238,8 +259,12 @@ func (c *VMCompiler) simplify(node Node) Node {
 		return n
 	case *IfExpression:
 		n.Condition = c.simplify(n.Condition).(Expression)
-		if n.Consequence != nil { n.Consequence = c.simplify(n.Consequence).(Expression) }
-		if n.Alternative != nil { n.Alternative = c.simplify(n.Alternative).(Expression) }
+		if n.Consequence != nil {
+			n.Consequence = c.simplify(n.Consequence).(Expression)
+		}
+		if n.Alternative != nil {
+			n.Alternative = c.simplify(n.Alternative).(Expression)
+		}
 		return n
 	case *AssignExpression:
 		n.Value = c.simplify(n.Value).(Expression)
@@ -283,26 +308,36 @@ func (c *VMCompiler) walk(node Node) error {
 		c.emit(OpPush, c.addConstant(Value{Type: ValString, Str: n.Value}))
 	case *BooleanLiteral:
 		val := uint64(0)
-		if n.Value { val = 1 }
+		if n.Value {
+			val = 1
+		}
 		c.emit(OpPush, c.addConstant(Value{Type: ValBool, Num: val}))
 	case *PrefixExpression:
 		if n.Operator == "-" {
 			c.emit(OpPush, c.addConstant(Value{Type: ValInt, Num: 0}))
 			err := c.walk(n.Right)
-			if err != nil { return err }
+			if err != nil {
+				return err
+			}
 			c.emit(OpSub, 0)
 		} else if n.Operator == "!" {
 			err := c.walk(n.Right)
-			if err != nil { return err }
+			if err != nil {
+				return err
+			}
 			c.emit(OpNot, 0)
 		}
 	case *InfixExpression:
 		if n.Operator == "&&" {
 			err := c.walk(n.Left)
-			if err != nil { return err }
+			if err != nil {
+				return err
+			}
 			jumpFalse := c.emit(OpJumpIfFalse, 0)
 			err = c.walk(n.Right)
-			if err != nil { return err }
+			if err != nil {
+				return err
+			}
 			c.emit(OpNot, 0)
 			c.emit(OpNot, 0)
 			jumpEnd := c.emit(OpJump, 0)
@@ -313,10 +348,14 @@ func (c *VMCompiler) walk(node Node) error {
 		}
 		if n.Operator == "||" {
 			err := c.walk(n.Left)
-			if err != nil { return err }
+			if err != nil {
+				return err
+			}
 			jumpTrue := c.emit(OpJumpIfTrue, 0)
 			err = c.walk(n.Right)
-			if err != nil { return err }
+			if err != nil {
+				return err
+			}
 			c.emit(OpNot, 0)
 			c.emit(OpNot, 0)
 			jumpEnd := c.emit(OpJump, 0)
@@ -327,26 +366,43 @@ func (c *VMCompiler) walk(node Node) error {
 		}
 
 		err := c.walk(n.Left)
-		if err != nil { return err }
+		if err != nil {
+			return err
+		}
 		err = c.walk(n.Right)
-		if err != nil { return err }
+		if err != nil {
+			return err
+		}
 
 		switch n.Operator {
-		case "+": c.emit(OpAdd, 0)
-		case "-": c.emit(OpSub, 0)
-		case "*": c.emit(OpMul, 0)
-		case "/": c.emit(OpDiv, 0)
-		case "%": c.emit(OpMod, 0)
-		case "==": c.emit(OpEqual, 0)
-		case ">": c.emit(OpGreater, 0)
-		case "<": c.emit(OpLess, 0)
-		case ">=": c.emit(OpGreaterEqual, 0)
-		case "<=": c.emit(OpLessEqual, 0)
-		default: return fmt.Errorf("unknown operator: %s", n.Operator)
+		case "+":
+			c.emit(OpAdd, 0)
+		case "-":
+			c.emit(OpSub, 0)
+		case "*":
+			c.emit(OpMul, 0)
+		case "/":
+			c.emit(OpDiv, 0)
+		case "%":
+			c.emit(OpMod, 0)
+		case "==":
+			c.emit(OpEqual, 0)
+		case ">":
+			c.emit(OpGreater, 0)
+		case "<":
+			c.emit(OpLess, 0)
+		case ">=":
+			c.emit(OpGreaterEqual, 0)
+		case "<=":
+			c.emit(OpLessEqual, 0)
+		default:
+			return fmt.Errorf("unknown operator: %s", n.Operator)
 		}
 	case *IfExpression:
 		err := c.walk(n.Condition)
-		if err != nil { return err }
+		if err != nil {
+			return err
+		}
 
 		if n.IsSimple {
 			return nil
@@ -354,14 +410,18 @@ func (c *VMCompiler) walk(node Node) error {
 
 		jumpFalse := c.emit(OpJumpIfFalse, 0)
 		err = c.walk(n.Consequence)
-		if err != nil { return err }
+		if err != nil {
+			return err
+		}
 
 		jumpEnd := c.emit(OpJump, 0)
 		c.patch(jumpFalse, int32(len(c.instructions)))
 
 		if n.Alternative != nil {
 			err = c.walk(n.Alternative)
-			if err != nil { return err }
+			if err != nil {
+				return err
+			}
 		} else {
 			c.emit(OpPush, c.addConstant(Value{Type: ValNil}))
 		}
@@ -369,14 +429,18 @@ func (c *VMCompiler) walk(node Node) error {
 
 	case *AssignExpression:
 		err := c.walk(n.Value)
-		if err != nil { return err }
+		if err != nil {
+			return err
+		}
 		c.emit(OpSetGlobal, c.addConstant(Value{Type: ValString, Str: n.Name.Value}))
 
 	case *CallExpression:
 		if ident, ok := n.Function.(*Identifier); ok && ident.Value == "concat" {
 			for _, arg := range n.Arguments {
 				err := c.walk(arg)
-				if err != nil { return err }
+				if err != nil {
+					return err
+				}
 			}
 			c.emit(OpConcat, int32(len(n.Arguments)))
 			return nil
@@ -384,13 +448,56 @@ func (c *VMCompiler) walk(node Node) error {
 
 		for _, arg := range n.Arguments {
 			err := c.walk(arg)
-			if err != nil { return err }
+			if err != nil {
+				return err
+			}
 		}
 		if ident, ok := n.Function.(*Identifier); ok {
 			c.emit(OpCall, c.addConstant(Value{Type: ValString, Str: ident.Value}))
 			c.instructions[len(c.instructions)-1].Arg |= int32(len(n.Arguments)) << 16
 		} else {
 			return fmt.Errorf("calling non-identifier functions not supported in VM yet")
+		}
+	case *SequenceExpression:
+		err := c.walk(n.Left)
+		if err != nil {
+			return err
+		}
+		c.emit(OpPop, 0)
+		err = c.walk(n.Right)
+		if err != nil {
+			return err
+		}
+	case *MemberCallExpression:
+		if n.Method == "get" && len(n.Arguments) == 1 {
+			if lit, ok := n.Arguments[0].(*StringLiteral); ok {
+				err := c.walk(n.Object)
+				if err != nil { return err }
+				c.emit(OpMapGetConst, c.addConstant(Value{Type: ValString, Str: lit.Value}))
+				return nil
+			}
+		}
+		err := c.walk(n.Object)
+		if err != nil {
+			return err
+		}
+		for _, arg := range n.Arguments {
+			err = c.walk(arg)
+			if err != nil {
+				return err
+			}
+		}
+		switch n.Method {
+		case "get":
+			c.emit(OpMapGet, 0)
+		case "set":
+			c.emit(OpMapSet, 0)
+		case "has":
+			c.emit(OpMapHas, 0)
+		case "del":
+			c.emit(OpMapDel, 0)
+		default:
+			return fmt.Errorf("unknown method: %s", n.Method)
 		}
 	}
 	return nil
@@ -399,11 +506,18 @@ func (c *VMCompiler) walk(node Node) error {
 func (c *VMCompiler) addConstant(v Value) int32 {
 	var key any
 	switch v.Type {
-	case ValInt: key = int64(v.Num)
-	case ValFloat: key = math.Float64frombits(v.Num)
-	case ValBool: key = v.Num != 0
-	case ValString: key = v.Str
-	case ValNil: key = nil
+	case ValInt:
+		key = int64(v.Num)
+	case ValFloat:
+		key = math.Float64frombits(v.Num)
+	case ValBool:
+		key = v.Num != 0
+	case ValString:
+		key = v.Str
+	case ValNil:
+		key = nil
+	case ValMap:
+		key = v.Ptr
 	}
 	if idx, ok := c.constMap[key]; ok {
 		return idx

@@ -66,6 +66,41 @@ func TestEvaluator(t *testing.T) {
 	}
 }
 
+func TestEvaluatorNewSyntax(t *testing.T) {
+	tests := []struct {
+		input    string
+		vars     map[string]any
+		expected any
+	}{
+		{`m.set("a", 1) => m.get("a")`, map[string]any{"m": make(map[string]any)}, int64(1)},
+		{`m.set("a", 1) => m.has("a")`, map[string]any{"m": make(map[string]any)}, true},
+		{`m.set("a", 1) => m.del("a") => m.has("a")`, map[string]any{"m": make(map[string]any)}, false},
+		{`if m.has("a") then m.get("a") else is "none"`, map[string]any{"m": map[string]any{"a": "ok"}}, "ok"},
+		{`if m.has("b") then m.get("b") else is "none"`, map[string]any{"m": map[string]any{"a": "ok"}}, "none"},
+		{`a = 1 => a = a + 1 => a`, map[string]any{"a": 0}, int64(2)},
+		{`m.set("x", 10) => m.set("y", 20) => m.get("x") + m.get("y")`, map[string]any{"m": make(map[string]any)}, int64(30)},
+	}
+
+	for i, tt := range tests {
+		l := NewLexer(tt.input)
+		p := NewParser(l)
+		program := p.ParseProgram()
+		if len(p.Errors()) != 0 {
+			t.Errorf("test[%d] %q has errors: %v", i, tt.input, p.Errors())
+			continue
+		}
+		ctx := NewMapContext(tt.vars)
+		result, err := Eval(program, ctx)
+		if err != nil {
+			t.Errorf("test[%d] %q eval error: %v", i, tt.input, err)
+			continue
+		}
+		if result != tt.expected {
+			t.Errorf("test[%d] %q expected=%v (%T), got=%v (%T)", i, tt.input, tt.expected, tt.expected, result, result)
+		}
+	}
+}
+
 func TestEvalNil(t *testing.T) {
 	result, err := Eval(nil, nil)
 	if err != nil {
