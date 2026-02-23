@@ -24,7 +24,7 @@ func RunNeoVM[C Context](bc *NeoBytecode, ctx C) (any, error) {
 	if mctx, ok := any(ctx).(*MapContext); ok {
 		return RunNeoVMWithMap(bc, mctx.vars)
 	}
-	return runNeoVMGeneral(bc, ctx)
+	return runNeoVMGeneral[C](bc, ctx)
 }
 
 func RunNeoVMWithMap(bc *NeoBytecode, vars map[string]any) (any, error) {
@@ -532,14 +532,14 @@ func RunNeoVMWithMap(bc *NeoBytecode, vars map[string]any) (any, error) {
 			gIdx := inst.Arg >> 16
 			jTarget := inst.Arg & 0xFFFF
 			name := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(gIdx)*valSize)).Str
-			if !isTruthy(vars[name]) {
+			if !isValTruthyAny(vars[name]) {
 				pc = int(jTarget)
 			}
 		case NeoOpGetGlobalJumpIfTrue:
 			gIdx := inst.Arg >> 16
 			jTarget := inst.Arg & 0xFFFF
 			name := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(gIdx)*valSize)).Str
-			if isTruthy(vars[name]) {
+			if isValTruthyAny(vars[name]) {
 				pc = int(jTarget)
 			}
 		case NeoOpAddC:
@@ -805,7 +805,7 @@ func RunNeoVMWithMap(bc *NeoBytecode, vars map[string]any) (any, error) {
 	return stack[sp].ToInterface(), nil
 }
 
-func runNeoVMGeneral(bc *NeoBytecode, ctx Context) (any, error) {
+func runNeoVMGeneral[C Context](bc *NeoBytecode, ctx C) (any, error) {
 	var stack [64]Value
 	insts := bc.Instructions
 	nInsts := len(insts)
@@ -839,17 +839,31 @@ func runNeoVMGeneral(bc *NeoBytecode, ctx Context) (any, error) {
 			r := stack[sp]
 			sp--
 			l := &stack[sp]
-			*l = l.Add(r)
+			if l.Type == ValInt && r.Type == ValInt {
+				l.Num += r.Num
+			} else if l.Type == ValString && r.Type == ValString {
+				l.Str += r.Str
+			} else {
+				*l = l.Add(r)
+			}
 		case NeoOpSub:
 			r := stack[sp]
 			sp--
 			l := &stack[sp]
-			*l = l.Sub(r)
+			if l.Type == ValInt && r.Type == ValInt {
+				l.Num -= r.Num
+			} else {
+				*l = l.Sub(r)
+			}
 		case NeoOpMul:
 			r := stack[sp]
 			sp--
 			l := &stack[sp]
-			*l = l.Mul(r)
+			if l.Type == ValInt && r.Type == ValInt {
+				l.Num *= r.Num
+			} else {
+				*l = l.Mul(r)
+			}
 		case NeoOpDiv:
 			rv := stack[sp]
 			sp--
@@ -923,7 +937,16 @@ func runNeoVMGeneral(bc *NeoBytecode, ctx Context) (any, error) {
 			if sp >= 64 {
 				return nil, fmt.Errorf("NeoVM stack overflow")
 			}
-			stack[sp] = FromInterface(val)
+			target := &stack[sp]
+			switch v := val.(type) {
+			case int64: *target = Value{Type: ValInt, Num: uint64(v)}
+			case int: *target = Value{Type: ValInt, Num: uint64(int64(v))}
+			case float64: *target = Value{Type: ValFloat, Num: math.Float64bits(v)}
+			case string: *target = Value{Type: ValString, Str: v}
+			case bool: *target = Value{Type: ValBool, Num: boolToUint64(v)}
+			case nil: *target = Value{Type: ValNil}
+			default: *target = FromInterface(v)
+			}
 		case NeoOpSetGlobal:
 			name := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(inst.Arg)*valSize)).Str
 			ctx.Set(name, stack[sp].ToInterface())
@@ -1136,7 +1159,7 @@ func runNeoVMGeneral(bc *NeoBytecode, ctx Context) (any, error) {
 			jTarget := inst.Arg & 0xFFFF
 			name := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(gIdx)*valSize)).Str
 			val, _ := ctx.Get(name)
-			if !isTruthy(val) {
+			if !isValTruthyAny(val) {
 				pc = int(jTarget)
 			}
 		case NeoOpGetGlobalJumpIfTrue:
@@ -1144,7 +1167,7 @@ func runNeoVMGeneral(bc *NeoBytecode, ctx Context) (any, error) {
 			jTarget := inst.Arg & 0xFFFF
 			name := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(gIdx)*valSize)).Str
 			val, _ := ctx.Get(name)
-			if isTruthy(val) {
+			if isValTruthyAny(val) {
 				pc = int(jTarget)
 			}
 		case NeoOpAddC:
