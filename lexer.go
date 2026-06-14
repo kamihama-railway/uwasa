@@ -5,6 +5,8 @@ package uwasa
 
 import (
 	"sync"
+	"unicode"
+	"unicode/utf8"
 )
 
 type TokenType int
@@ -49,7 +51,7 @@ type Lexer struct {
 	input        string
 	position     int
 	readPosition int
-	ch           byte
+	ch           rune
 }
 
 var lexerPool = sync.Pool{
@@ -75,18 +77,22 @@ func (l *Lexer) Reset(input string) {
 func (l *Lexer) readChar() {
 	if l.readPosition >= len(l.input) {
 		l.ch = 0
+		l.position = l.readPosition
+		l.readPosition++
 	} else {
-		l.ch = l.input[l.readPosition]
+		r, size := utf8.DecodeRuneInString(l.input[l.readPosition:])
+		l.ch = r
+		l.position = l.readPosition
+		l.readPosition += size
 	}
-	l.position = l.readPosition
-	l.readPosition++
 }
 
-func (l *Lexer) peekChar() byte {
+func (l *Lexer) peekChar() rune {
 	if l.readPosition >= len(l.input) {
 		return 0
 	}
-	return l.input[l.readPosition]
+	r, _ := utf8.DecodeRuneInString(l.input[l.readPosition:])
+	return r
 }
 
 func (l *Lexer) NextToken() Token {
@@ -206,11 +212,11 @@ func (l *Lexer) readString() string {
 	return str
 }
 
-func isLetter(ch byte) bool {
-	return 'a' <= ch && ch <= 'z' || 'A' <= ch && ch <= 'Z' || ch == '_'
+func isLetter(ch rune) bool {
+	return unicode.IsLetter(ch) || ch == '_'
 }
 
-func isDigit(ch byte) bool {
+func isDigit(ch rune) bool {
 	return '0' <= ch && ch <= '9'
 }
 
