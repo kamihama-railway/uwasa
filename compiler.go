@@ -78,10 +78,16 @@ func (o *Recompiler) simplifyInfix(ie *InfixExpression) Node {
 	// 代数简化
 	switch ie.Operator {
 	case "+":
-		if isZero(left) { return right }
-		if isZero(right) { return left }
+		if isZero(left) {
+			return right
+		}
+		if isZero(right) {
+			return left
+		}
 	case "-":
-		if isZero(right) { return left }
+		if isZero(right) {
+			return left
+		}
 		if isSameIdentifier(left, right) {
 			return &NumberLiteral{Int64Value: 0, IsInt: true}
 		}
@@ -94,16 +100,26 @@ func (o *Recompiler) simplifyInfix(ie *InfixExpression) Node {
 			return left
 		}
 	case "*":
-		if isZero(left) { return &NumberLiteral{Int64Value: 0, IsInt: true} }
-		if isZero(right) { return &NumberLiteral{Int64Value: 0, IsInt: true} }
-		if isOne(left) { return right }
-		if isOne(right) { return left }
+		if isZero(left) {
+			return &NumberLiteral{Int64Value: 0, IsInt: true}
+		}
+		if isZero(right) {
+			return &NumberLiteral{Int64Value: 0, IsInt: true}
+		}
+		if isOne(left) {
+			return right
+		}
+		if isOne(right) {
+			return left
+		}
 	case "/":
 		if isZero(right) {
 			o.errors = append(o.errors, "division by zero")
 			return ie
 		}
-		if isOne(right) { return left }
+		if isOne(right) {
+			return left
+		}
 		if isSameIdentifier(left, right) && !hasSideEffects(left) {
 			return &NumberLiteral{Int64Value: 1, IsInt: true}
 		}
@@ -182,22 +198,32 @@ func (o *Recompiler) checkUnreachable(ie *IfExpression) {
 
 func isZero(n Node) bool {
 	lit, ok := n.(*NumberLiteral)
-	if !ok { return false }
-	if lit.IsInt { return lit.Int64Value == 0 }
+	if !ok {
+		return false
+	}
+	if lit.IsInt {
+		return lit.Int64Value == 0
+	}
 	return lit.Float64Value == 0
 }
 
 func isOne(n Node) bool {
 	lit, ok := n.(*NumberLiteral)
-	if !ok { return false }
-	if lit.IsInt { return lit.Int64Value == 1 }
+	if !ok {
+		return false
+	}
+	if lit.IsInt {
+		return lit.Int64Value == 1
+	}
 	return lit.Float64Value == 1
 }
 
 func isSameIdentifier(left, right Node) bool {
 	l, okL := left.(*Identifier)
 	r, okR := right.(*Identifier)
-	if !okL || !okR { return false }
+	if !okL || !okR {
+		return false
+	}
 	return l.Value == r.Value
 }
 
@@ -214,10 +240,13 @@ func hasSideEffects(n Node) bool {
 }
 
 func walk(node Node, fn func(Node)) {
-	if node == nil { return }
+	if node == nil {
+		return
+	}
 	fn(node)
 	switch n := node.(type) {
-	case *PrefixExpression: walk(n.Right, fn)
+	case *PrefixExpression:
+		walk(n.Right, fn)
 	case *InfixExpression:
 		walk(n.Left, fn)
 		walk(n.Right, fn)

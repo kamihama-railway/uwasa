@@ -173,16 +173,26 @@ func (c *RegisterCompiler) walk(node Node, reg int) (int, error) {
 
 		var op ROpCode
 		switch n.Operator {
-		case "+": op = ROpAdd
-		case "-": op = ROpSub
-		case "*": op = ROpMul
-		case "/": op = ROpDiv
-		case "%": op = ROpMod
-		case "==": op = ROpEqual
-		case ">": op = ROpGreater
-		case "<": op = ROpLess
-		case ">=": op = ROpGreaterEqual
-		case "<=": op = ROpLessEqual
+		case "+":
+			op = ROpAdd
+		case "-":
+			op = ROpSub
+		case "*":
+			op = ROpMul
+		case "/":
+			op = ROpDiv
+		case "%":
+			op = ROpMod
+		case "==":
+			op = ROpEqual
+		case ">":
+			op = ROpGreater
+		case "<":
+			op = ROpLess
+		case ">=":
+			op = ROpGreaterEqual
+		case "<=":
+			op = ROpLessEqual
 		default:
 			return 0, fmt.Errorf("unknown operator: %s", n.Operator)
 		}

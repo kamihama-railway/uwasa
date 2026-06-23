@@ -143,3 +143,34 @@ func TestVM_FusedStringConcat(t *testing.T) {
 		t.Errorf("Expected %q, got %q (OpAddGlobalGlobal failed for strings)", "hello world", got2)
 	}
 }
+
+func TestVMNewSyntax(t *testing.T) {
+	tests := []struct {
+		input    string
+		vars     map[string]any
+		expected any
+	}{
+		{`m.set("a", 1) => m.get("a")`, map[string]any{"m": make(map[string]any)}, int64(1)},
+		{`m.set("a", 1) => m.has("a")`, map[string]any{"m": make(map[string]any)}, true},
+		{`m.set("a", 1) => m.del("a") => m.has("a")`, map[string]any{"m": make(map[string]any)}, false},
+		{`if m.has("a") then m.get("a") else is "none"`, map[string]any{"m": map[string]any{"a": "ok"}}, "ok"},
+		{`a = 1 => a = a + 1 => a`, map[string]any{"a": int64(0)}, int64(2)},
+		{`m.set("x", 10) => m.set("y", 20) => m.get("x") + m.get("y")`, map[string]any{"m": make(map[string]any)}, int64(30)},
+	}
+
+	for i, tt := range tests {
+		engine, err := NewEngineVM(tt.input)
+		if err != nil {
+			t.Errorf("test[%d] %q NewEngineVM error: %v", i, tt.input, err)
+			continue
+		}
+		got, err := engine.Execute(tt.vars)
+		if err != nil {
+			t.Errorf("test[%d] %q Execute error: %v", i, tt.input, err)
+			continue
+		}
+		if got != tt.expected {
+			t.Errorf("test[%d] %q expected %v (%T), got %v (%T)", i, tt.input, tt.expected, tt.expected, got, got)
+		}
+	}
+}
