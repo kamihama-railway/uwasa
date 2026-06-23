@@ -40,6 +40,8 @@ const (
 	TokenRParen    // )
 	TokenComma     // ,
 	TokenBang      // !
+	TokenDot       // .
+	TokenSequence  // =>
 )
 
 type Token struct {
@@ -101,10 +103,15 @@ func (l *Lexer) NextToken() Token {
 	l.skipWhitespace()
 
 	switch l.ch {
+	case '.':
+		tok = Token{Type: TokenDot, Literal: "."}
 	case '=':
 		if l.peekChar() == '=' {
 			l.readChar()
 			tok = Token{Type: TokenEq, Literal: "=="}
+		} else if l.peekChar() == '>' {
+			l.readChar()
+			tok = Token{Type: TokenSequence, Literal: "=>"}
 		} else {
 			tok = Token{Type: TokenAssign, Literal: "="}
 		}

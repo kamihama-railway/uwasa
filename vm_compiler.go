@@ -392,6 +392,26 @@ func (c *VMCompiler) walk(node Node) error {
 		} else {
 			return fmt.Errorf("calling non-identifier functions not supported in VM yet")
 		}
+	case *SequenceExpression:
+		err := c.walk(n.Left)
+		if err != nil { return err }
+		c.emit(OpPop, 0)
+		err = c.walk(n.Right)
+		if err != nil { return err }
+	case *MemberCallExpression:
+		err := c.walk(n.Object)
+		if err != nil { return err }
+		for _, arg := range n.Arguments {
+			err = c.walk(arg)
+			if err != nil { return err }
+		}
+		switch n.Method {
+		case "get": c.emit(OpMapGet, 0)
+		case "set": c.emit(OpMapSet, 0)
+		case "has": c.emit(OpMapHas, 0)
+		case "del": c.emit(OpMapDel, 0)
+		default: return fmt.Errorf("unknown method: %s", n.Method)
+		}
 	}
 	return nil
 }
@@ -404,6 +424,7 @@ func (c *VMCompiler) addConstant(v Value) int32 {
 	case ValBool: key = v.Num != 0
 	case ValString: key = v.Str
 	case ValNil: key = nil
+	case ValMap: key = v.Ptr
 	}
 	if idx, ok := c.constMap[key]; ok {
 		return idx

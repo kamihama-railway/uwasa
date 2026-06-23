@@ -161,9 +161,83 @@ func (c *NeoCompiler) getInfixFn(t TokenType) func(compilationValue) (compilatio
 		return c.parseAssignExpression
 	case TokenLParen:
 		return c.parseCallExpression
+	case TokenDot:
+		return c.parseMemberCallExpression
+	case TokenSequence:
+		return c.parseSequenceExpression
 	default:
 		return nil
 	}
+}
+
+func (c *NeoCompiler) parseSequenceExpression(left compilationValue) (compilationValue, error) {
+	if left.isConst {
+		c.emitPush(left.val)
+	}
+	c.emit(NeoOpPop, 0)
+	c.nextToken()
+	return c.parseExpression(SEQUENCE)
+}
+
+func (c *NeoCompiler) parseMemberCallExpression(left compilationValue) (compilationValue, error) {
+	if left.isConst {
+		return compilationValue{}, fmt.Errorf("member call subject must be an identifier")
+	}
+
+	lastInst := c.instructions[len(c.instructions)-1]
+	if lastInst.Op != NeoOpGetGlobal {
+		return compilationValue{}, fmt.Errorf("member call subject must be an identifier")
+	}
+
+	c.nextToken() // cur is identifier (method name)
+	if c.curToken.Type != TokenIdent {
+		return compilationValue{}, fmt.Errorf("expected method name after '.'")
+	}
+	method := c.curToken.Literal
+
+	if c.peekToken.Type != TokenLParen {
+		return compilationValue{}, fmt.Errorf("expected '(' after method name")
+	}
+	c.nextToken() // cur is '('
+
+	numArgs := 0
+	if c.peekToken.Type != TokenRParen {
+		c.nextToken()
+		val, err := c.parseExpression(LOWEST)
+		if err != nil { return compilationValue{}, err }
+		if val.isConst { c.emitPush(val.val) }
+		numArgs++
+		for c.peekToken.Type == TokenComma {
+			c.nextToken(); c.nextToken()
+			val, err = c.parseExpression(LOWEST)
+			if err != nil { return compilationValue{}, err }
+			if val.isConst { c.emitPush(val.val) }
+			numArgs++
+		}
+	}
+	if c.peekToken.Type != TokenRParen {
+		return compilationValue{}, fmt.Errorf("expected ')', got %s", c.peekToken.Type)
+	}
+	c.nextToken()
+
+	switch method {
+	case "get":
+		if numArgs != 1 { return compilationValue{}, fmt.Errorf("get expects 1 argument") }
+		c.emit(NeoOpMapGet, 0)
+	case "set":
+		if numArgs != 2 { return compilationValue{}, fmt.Errorf("set expects 2 arguments") }
+		c.emit(NeoOpMapSet, 0)
+	case "has":
+		if numArgs != 1 { return compilationValue{}, fmt.Errorf("has expects 1 argument") }
+		c.emit(NeoOpMapHas, 0)
+	case "del":
+		if numArgs != 1 { return compilationValue{}, fmt.Errorf("del expects 1 argument") }
+		c.emit(NeoOpMapDel, 0)
+	default:
+		return compilationValue{}, fmt.Errorf("unknown map method: %s", method)
+	}
+
+	return compilationValue{isConst: false}, nil
 }
 
 func (c *NeoCompiler) parseIdentifier() (compilationValue, error) {
@@ -181,14 +255,21 @@ func neoContainsDot(s string) bool {
 }
 
 func (c *NeoCompiler) parseNumberLiteral() (compilationValue, error) {
-	v, err := strconv.ParseFloat(c.curToken.Literal, 64)
-	if err != nil {
-		return compilationValue{}, err
-	}
 	var val Value
 	if !neoContainsDot(c.curToken.Literal) {
-		val = Value{Type: ValInt, Num: uint64(int64(v))}
+		v, err := strconv.ParseInt(c.curToken.Literal, 0, 64)
+		if err != nil {
+			// Fallback to float if it's too big for int64?
+			// But usually we want exact int64.
+			v_f, err_f := strconv.ParseFloat(c.curToken.Literal, 64)
+			if err_f != nil { return compilationValue{}, err_f }
+			val = Value{Type: ValFloat, Num: math.Float64bits(v_f)}
+		} else {
+			val = Value{Type: ValInt, Num: uint64(v)}
+		}
 	} else {
+		v, err := strconv.ParseFloat(c.curToken.Literal, 64)
+		if err != nil { return compilationValue{}, err }
 		val = Value{Type: ValFloat, Num: math.Float64bits(v)}
 	}
 	return compilationValue{isConst: true, val: val}, nil
@@ -430,7 +511,6 @@ func (c *NeoCompiler) foldInfix(l, r Value, op string) (Value, bool) {
 		}
 	case "/":
 		if (r.Type == ValInt && r.Num == 0) || (r.Type == ValFloat && math.Float64frombits(r.Num) == 0) {
-			c.errors = append(c.errors, "division by zero")
 			return Value{}, false
 		}
 		if l.Type == ValInt && r.Type == ValInt { return Value{Type: ValInt, Num: l.Num / r.Num}, true }
@@ -439,7 +519,7 @@ func (c *NeoCompiler) foldInfix(l, r Value, op string) (Value, bool) {
 			return Value{Type: ValFloat, Num: math.Float64bits(lf / rf)}, true
 		}
 	case "%":
-		if r.Type == ValInt && r.Num == 0 { c.errors = append(c.errors, "division by zero"); return Value{}, false }
+		if r.Type == ValInt && r.Num == 0 { return Value{}, false }
 		if l.Type == ValInt && r.Type == ValInt { return Value{Type: ValInt, Num: l.Num % r.Num}, true }
 	case "==": return Value{Type: ValBool, Num: boolToUint64(c.compare(l, r) == 0)}, true
 	case ">": return Value{Type: ValBool, Num: boolToUint64(c.compare(l, r) > 0)}, true
@@ -553,7 +633,10 @@ func (c *NeoCompiler) parseIfExpression() (compilationValue, error) {
 		cons, err := c.parseExpression(LOWEST)
 		if err != nil { return compilationValue{}, err }
 		if cons.isConst { c.emitPush(cons.val) }
+		jumpEnd := c.emit(NeoOpJump, 0)
 		c.patch(jumpFalse, int32(len(c.instructions)))
+		c.emitPush(Value{Type: ValNil})
+		c.patch(jumpEnd, int32(len(c.instructions)))
 		return compilationValue{isConst: false}, nil
 	}
 	if c.peekToken.Type == TokenIs {
@@ -599,7 +682,8 @@ func (c *NeoCompiler) parseIfExpression() (compilationValue, error) {
 		for _, target := range jumpEndTargets { c.patch(target, int32(len(c.instructions))) }
 		return compilationValue{isConst: false}, nil
 	}
-	return compilationValue{}, fmt.Errorf("expected then or is after if condition, got %s", c.peekToken.Type)
+	// Simple if <cond> -> returns bool
+	return compilationValue{isConst: false}, nil
 }
 
 func (c *NeoCompiler) emit(op NeoOpCode, arg int32) int {
@@ -774,6 +858,8 @@ func (c *NeoCompiler) addConstant(v Value) int32 {
 		if idx, ok := c.constMapString[v.Str]; ok { return idx }
 	case ValNil:
 		if idx, ok := c.constMapOther[nil]; ok { return idx }
+	case ValMap:
+		if idx, ok := c.constMapOther[v.Ptr]; ok { return idx }
 	}
 
 	idx := int32(len(c.constants))
@@ -784,7 +870,10 @@ func (c *NeoCompiler) addConstant(v Value) int32 {
 	case ValFloat: c.constMapFloat[v.Num] = idx
 	case ValBool: c.constMapBool[v.Num != 0] = idx
 	case ValString: c.constMapString[v.Str] = idx
-	case ValNil: c.constMapOther[nil] = idx
+	case ValNil, ValMap:
+		key := v.Ptr
+		if v.Type == ValNil { key = nil }
+		c.constMapOther[key] = idx
 	}
 	return idx
 }

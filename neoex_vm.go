@@ -383,6 +383,39 @@ func RunNeoVMWithMap(bc *NeoBytecode, vars map[string]any) (any, error) {
 				sp++; if sp >= 64 { return nil, fmt.Errorf("NeoVM stack overflow") }
 				stack[sp] = FromInterface(res)
 			} else { return nil, fmt.Errorf("builtin function not found: %s", name) }
+		case NeoOpMapGet:
+			key := stack[sp]; sp--
+			obj := stack[sp]
+			if obj.Type != ValMap { return nil, fmt.Errorf("MGET: not a map") }
+			if key.Type != ValString { return nil, fmt.Errorf("MGET: key must be string") }
+			m := obj.Ptr.(map[string]any)
+			stack[sp] = FromInterface(m[key.Str])
+		case NeoOpMapSet:
+			val := stack[sp]; sp--
+			key := stack[sp]; sp--
+			obj := stack[sp]
+			if obj.Type != ValMap { return nil, fmt.Errorf("MSET: not a map") }
+			if key.Type != ValString { return nil, fmt.Errorf("MSET: key must be string") }
+			m := obj.Ptr.(map[string]any)
+			m[key.Str] = val.ToInterface()
+			stack[sp] = Value{Type: ValNil}
+		case NeoOpMapHas:
+			key := stack[sp]; sp--
+			obj := stack[sp]
+			if obj.Type != ValMap { return nil, fmt.Errorf("MHAS: not a map") }
+			if key.Type != ValString { return nil, fmt.Errorf("MHAS: key must be string") }
+			m := obj.Ptr.(map[string]any)
+			_, ok := m[key.Str]
+			res := uint64(0); if ok { res = 1 }
+			stack[sp] = Value{Type: ValBool, Num: res}
+		case NeoOpMapDel:
+			key := stack[sp]; sp--
+			obj := stack[sp]
+			if obj.Type != ValMap { return nil, fmt.Errorf("MDEL: not a map") }
+			if key.Type != ValString { return nil, fmt.Errorf("MDEL: key must be string") }
+			m := obj.Ptr.(map[string]any)
+			delete(m, key.Str)
+			stack[sp] = Value{Type: ValNil}
 		case NeoOpReturn:
 			if sp < 0 { return nil, nil }
 			return stack[sp].ToInterface(), nil
@@ -663,6 +696,39 @@ func runNeoVMGeneral(bc *NeoBytecode, ctx Context) (any, error) {
 				sp++; if sp >= 64 { return nil, fmt.Errorf("NeoVM stack overflow") }
 				stack[sp] = FromInterface(res)
 			} else { return nil, fmt.Errorf("builtin function not found: %s", name) }
+		case NeoOpMapGet:
+			key := stack[sp]; sp--
+			obj := stack[sp]
+			if obj.Type != ValMap { return nil, fmt.Errorf("MGET: not a map") }
+			if key.Type != ValString { return nil, fmt.Errorf("MGET: key must be string") }
+			m := obj.Ptr.(map[string]any)
+			stack[sp] = FromInterface(m[key.Str])
+		case NeoOpMapSet:
+			val := stack[sp]; sp--
+			key := stack[sp]; sp--
+			obj := stack[sp]
+			if obj.Type != ValMap { return nil, fmt.Errorf("MSET: not a map") }
+			if key.Type != ValString { return nil, fmt.Errorf("MSET: key must be string") }
+			m := obj.Ptr.(map[string]any)
+			m[key.Str] = val.ToInterface()
+			stack[sp] = Value{Type: ValNil}
+		case NeoOpMapHas:
+			key := stack[sp]; sp--
+			obj := stack[sp]
+			if obj.Type != ValMap { return nil, fmt.Errorf("MHAS: not a map") }
+			if key.Type != ValString { return nil, fmt.Errorf("MHAS: key must be string") }
+			m := obj.Ptr.(map[string]any)
+			_, ok := m[key.Str]
+			res := uint64(0); if ok { res = 1 }
+			stack[sp] = Value{Type: ValBool, Num: res}
+		case NeoOpMapDel:
+			key := stack[sp]; sp--
+			obj := stack[sp]
+			if obj.Type != ValMap { return nil, fmt.Errorf("MDEL: not a map") }
+			if key.Type != ValString { return nil, fmt.Errorf("MDEL: key must be string") }
+			m := obj.Ptr.(map[string]any)
+			delete(m, key.Str)
+			stack[sp] = Value{Type: ValNil}
 		default:
 			return nil, fmt.Errorf("unsupported NeoVM opcode: %v", inst.Op)
 		}

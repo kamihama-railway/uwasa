@@ -67,6 +67,10 @@ const (
 	NeoOpSubC
 	NeoOpMulC
 	NeoOpDivC
+	NeoOpMapGet
+	NeoOpMapSet
+	NeoOpMapHas
+	NeoOpMapDel
 	NeoOpReturn // New for NeoEx to signal end of execution if needed
 )
 
@@ -131,6 +135,10 @@ func (o NeoOpCode) String() string {
 	case NeoOpSubC: return "SUBC"
 	case NeoOpMulC: return "MULC"
 	case NeoOpDivC: return "DIVC"
+	case NeoOpMapGet: return "MGET"
+	case NeoOpMapSet: return "MSET"
+	case NeoOpMapHas: return "MHAS"
+	case NeoOpMapDel: return "MDEL"
 	case NeoOpReturn: return "RET"
 	default: return fmt.Sprintf("NEO_UNKNOWN(%d)", o)
 	}

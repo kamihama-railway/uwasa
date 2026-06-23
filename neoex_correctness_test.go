@@ -35,6 +35,10 @@ func TestNeoExVM_Correctness(t *testing.T) {
 		{"Const Global Sub", "100 - a", map[string]any{"a": int64(30)}, int64(70)},
 		{"Const Global Div", "100 / a", map[string]any{"a": int64(2)}, int64(50)},
 		{"Infinity Div (Var)", "1 / a", map[string]any{"a": 0}, math.Inf(1)},
+		{"Map Set and Get", "m.set(\"a\", 1) => m.get(\"a\")", map[string]any{"m": make(map[string]any)}, int64(1)},
+		{"Map Has", "m.set(\"a\", 1) => m.has(\"a\")", map[string]any{"m": make(map[string]any)}, true},
+		{"Map Del", "m.set(\"a\", 1) => m.del(\"a\") => m.has(\"a\")", map[string]any{"m": make(map[string]any)}, false},
+		{"Sequence Side Effect", "a = 1 => a = a + 1 => a", map[string]any{"a": int64(0)}, int64(2)},
 	}
 
 	for _, tt := range tests {
