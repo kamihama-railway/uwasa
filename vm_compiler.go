@@ -11,13 +11,15 @@ import (
 type VMCompiler struct {
 	instructions []vmInstruction
 	constants    []Value
-	constMap     map[any]int32
+	constMap     map[Value]int32
 	errors       []string
 }
 
 func NewVMCompiler() *VMCompiler {
 	return &VMCompiler{
-		constMap: make(map[any]int32),
+		instructions: make([]vmInstruction, 0, 16),
+		constants:    make([]Value, 0, 16),
+		constMap:     make(map[Value]int32, 16),
 	}
 }
 
@@ -427,13 +429,19 @@ func (c *VMCompiler) walk(node Node) error {
 }
 
 func (c *VMCompiler) addConstant(v Value) int32 {
-	var key any
-	switch v.Type {
-	case ValInt: key = int64(v.Num)
-	case ValFloat: key = math.Float64frombits(v.Num)
-	case ValBool: key = v.Num != 0
-	case ValString: key = v.Str
-	case ValNil: key = nil
+	// Value is comparable, so it can be used directly as a map key.  The old
+	// map[any] boxed every int/float/bool constant into a fresh interface value,
+	// which dominated FullLifecycle allocation (pprof: ~51% of alloc_space).
+	key := v
+	if v.Type == ValFloat {
+		f := math.Float64frombits(v.Num)
+		if math.IsNaN(f) {
+			// Matches the old float64 map key: NaN never compares equal.
+			idx := int32(len(c.constants))
+			c.constants = append(c.constants, v)
+			return idx
+		}
+		if f == 0 { key.Num = 0 } // -0.0 and +0.0 used to deduplicate
 	}
 	if idx, ok := c.constMap[key]; ok {
 		return idx
