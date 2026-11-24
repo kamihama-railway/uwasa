@@ -269,6 +269,16 @@ func (c *VMCompiler) checkTypeMismatch(ie *InfixExpression) {
 	}
 }
 
+// concatChainOperands flattens the left spine of a '+' chain while keeping
+// right-hand subexpressions intact, so evaluation order and grouping are
+// preserved exactly.
+func concatChainOperands(n Expression) []Expression {
+	if inf, ok := n.(*InfixExpression); ok && inf.Operator == "+" {
+		return append(concatChainOperands(inf.Left), inf.Right)
+	}
+	return []Expression{n}
+}
+
 func (c *VMCompiler) walk(node Node) error {
 	switch n := node.(type) {
 	case *Identifier:
@@ -324,6 +334,26 @@ func (c *VMCompiler) walk(node Node) error {
 			c.emit(OpPush, c.addConstant(Value{Type: ValBool, Num: 1}))
 			c.patch(jumpEnd, int32(len(c.instructions)))
 			return nil
+		}
+
+		if n.Operator == "+" {
+			operands := concatChainOperands(n)
+			if len(operands) > 2 {
+				hasStringLiteral := false
+				for _, operand := range operands {
+					if _, ok := operand.(*StringLiteral); ok {
+						hasStringLiteral = true
+						break
+					}
+				}
+				if hasStringLiteral {
+					for _, operand := range operands {
+						if err := c.walk(operand); err != nil { return err }
+					}
+					c.emit(OpConcatChain, int32(len(operands)))
+					return nil
+				}
+			}
 		}
 
 		err := c.walk(n.Left)
