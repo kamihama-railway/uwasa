@@ -135,3 +135,66 @@ func TestNeoExVM_ConstantFold(t *testing.T) {
 		t.Errorf("Expected foobarbaz, got %s", res)
 	}
 }
+
+type neoTestContext struct {
+	vars map[string]any
+}
+
+func (c *neoTestContext) Get(name string) (any, bool) {
+	v, ok := c.vars[name]
+	return v, ok
+}
+
+func (c *neoTestContext) Set(name string, value any) error {
+	c.vars[name] = value
+	return nil
+}
+
+// The general (custom Context) VM path must implement every opcode the
+// compiler can emit, including the fused concat variants implemented only in
+// RunNeoVMWithMap before this regression test was added.
+func TestNeoExVM_ConcatFusionWithContext(t *testing.T) {
+	tests := []struct {
+		input    string
+		op       NeoOpCode
+		vars     map[string]any
+		expected string
+	}{
+		{`concat(a, b)`, NeoOpConcat2, map[string]any{"a": "A", "b": "B"}, "AB"},
+		{`concat(b, "x")`, NeoOpConcatGC, map[string]any{"b": "B"}, "Bx"},
+		{`concat("x", b)`, NeoOpConcatCG, map[string]any{"b": "B"}, "xB"},
+	}
+
+	for _, tt := range tests {
+		engine, err := NewEngineVMNeo(tt.input)
+		if err != nil {
+			t.Fatalf("NewEngineVMNeo(%q) error: %v", tt.input, err)
+		}
+
+		found := false
+		for _, inst := range engine.neoBytecode.Instructions {
+			if inst.Op == tt.op {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("%q: compiler did not emit %v", tt.input, tt.op)
+			continue
+		}
+
+		got, err := engine.ExecuteWithContext(&neoTestContext{vars: tt.vars})
+		if err != nil {
+			t.Errorf("ExecuteWithContext(%q) error: %v", tt.input, err)
+			continue
+		}
+		if got != tt.expected {
+			t.Errorf("ExecuteWithContext(%q) = %v, want %v", tt.input, got, tt.expected)
+		}
+
+		gotMap, err := engine.Execute(tt.vars)
+		if err != nil || gotMap != tt.expected {
+			t.Errorf("Execute(%q) = %v, err=%v, want %v", tt.input, gotMap, err, tt.expected)
+		}
+	}
+}

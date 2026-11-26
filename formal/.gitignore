@@ -1,0 +1,8 @@
+# Lake 构建产物（可重新生成）
+.lake/
+build/
+*.olean
+*.ilean
+*.trace
+*.c
+*.c.hash

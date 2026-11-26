@@ -1,0 +1,55 @@
+# 编译产物
+*.o
+*.obj
+*.a
+*.so
+*.so.*
+*.dylib
+*.dll
+*.exe
+*.out
+*.bin
+
+# 可执行文件
+build/
+bin/
+out/
+target/
+uwasa
+uwasa_test
+uwasa_bench
+
+# 编译依赖文件
+.d/
+*.d
+
+# 链接/中间产物
+*.map
+*.elf
+*.lib
+*.dll.a
+
+# clang 相关
+*.ll
+*.bc
+*.s
+*.i
+*.iif
+
+# 静态/动态分析工具产物
+compile_commands.json
+perf.data
+perf.data.*
+.cache/
+.sanitize/
+*.gcda
+*.gcno
+*.profraw
+*.profdata
+
+# 编辑器/系统文件
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store

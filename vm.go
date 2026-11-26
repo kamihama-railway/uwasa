@@ -321,6 +321,8 @@ func runVMMapped(bc *RenderedBytecode, ctx *MapContext) (any, error) {
 			sp++
 			if sp >= 64 { return nil, fmt.Errorf("VM stack overflow") }
 			stack[sp] = Value{Type: ValString, Str: res}
+		case OpConcatChain:
+			if err := vmConcatChain(&stack, &sp, int(inst.Arg)); err != nil { return nil, err }
 		}
 	}
 	if sp < 0 { return nil, nil }
@@ -626,10 +628,47 @@ func runVMGeneral(bc *RenderedBytecode, ctx Context) (any, error) {
 			sp++
 			if sp >= 64 { return nil, fmt.Errorf("VM stack overflow") }
 			stack[sp] = Value{Type: ValString, Str: res}
+		case OpConcatChain:
+			if err := vmConcatChain(&stack, &sp, int(inst.Arg)); err != nil { return nil, err }
 		}
 	}
 	if sp < 0 { return nil, nil }
 	return stack[sp].ToInterface(), nil
+}
+
+// vmConcatChain evaluates a flattened string-concatenation chain.
+// When every operand is a string it writes directly into one buffer, avoiding
+// the intermediate strings produced by a sequence of OpAdd instructions.
+// For non-string operands it folds left-to-right with Value.Add, which is
+// exactly the semantics of the original OpAdd sequence.
+func vmConcatChain(stack *[64]Value, sp *int, numArgs int) error {
+	if numArgs < 1 { return fmt.Errorf("invalid concat chain length") }
+	var valsBuf [8]Value
+	var vals []Value
+	if numArgs <= 8 { vals = valsBuf[:numArgs] } else { vals = make([]Value, numArgs) }
+	allStrings := true
+	totalLen := 0
+	for i := numArgs - 1; i >= 0; i-- {
+		v := stack[*sp]
+		*sp = *sp - 1
+		vals[i] = v
+		if v.Type != ValString { allStrings = false } else { totalLen += len(v.Str) }
+	}
+	var res Value
+	if allStrings {
+		buf := bufferPool.Get().(*bytes.Buffer)
+		buf.Reset(); buf.Grow(totalLen)
+		for _, v := range vals { buf.WriteString(v.Str) }
+		res = Value{Type: ValString, Str: buf.String()}
+		bufferPool.Put(buf)
+	} else {
+		res = vals[0]
+		for _, v := range vals[1:] { res = res.Add(v) }
+	}
+	*sp = *sp + 1
+	if *sp >= 64 { return fmt.Errorf("VM stack overflow") }
+	stack[*sp] = res
+	return nil
 }
 
 func valToFloat64(v Value) (float64, bool) {

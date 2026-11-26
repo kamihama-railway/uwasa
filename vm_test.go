@@ -36,6 +36,8 @@ func TestVM(t *testing.T) {
 		{"!a", map[string]any{"a": true}, false},
 		{"!a", map[string]any{"a": false}, true},
 		{"-a", map[string]any{"a": int64(5)}, int64(-5)},
+		{`s1 + " " + s2 + " " + s3`, map[string]any{"s1": "the", "s2": "quick", "s3": "brown"}, "the quick brown"},
+		{`1 + " " + 2`, nil, float64(3)},
 	}
 
 	for _, tt := range tests {
@@ -141,5 +143,46 @@ func TestVM_FusedStringConcat(t *testing.T) {
 	got2, _ := engine2.Execute(vars2)
 	if got2 != "hello world" {
 		t.Errorf("Expected %q, got %q (OpAddGlobalGlobal failed for strings)", "hello world", got2)
+	}
+}
+
+func TestVM_ConcatChainCompilation(t *testing.T) {
+	input := `s1 + " " + s2 + " " + s3 + " " + s4`
+	engine, err := NewEngineVM(input)
+	if err != nil {
+		t.Fatalf("NewEngineVM failed: %v", err)
+	}
+
+	found := 0
+	adds := 0
+	for _, inst := range engine.bytecode.Instructions {
+		if inst.Op == OpConcatChain {
+			found++
+			if inst.Arg != 7 {
+				t.Errorf("OpConcatChain arg = %d, want 7", inst.Arg)
+			}
+		}
+		if inst.Op == OpAdd {
+			adds++
+		}
+	}
+	if found != 1 {
+		t.Errorf("expected one OpConcatChain, got %d; instructions: %v", found, engine.bytecode.Instructions)
+	}
+	if adds != 0 {
+		t.Errorf("expected no OpAdd in flattened chain, got %d", adds)
+	}
+
+	vars := map[string]any{"s1": "the", "s2": "quick", "s3": "brown", "s4": "fox"}
+	got, err := engine.Execute(vars)
+	if err != nil || got != "the quick brown fox" {
+		t.Errorf("Execute = %v, err = %v, want %q", got, err, "the quick brown fox")
+	}
+
+	// Grouping via parentheses must be preserved.
+	engine2, _ := NewEngineVM(`s1 + (s2 + s3)`)
+	got2, err := engine2.Execute(map[string]any{"s1": "a", "s2": "b", "s3": "c"})
+	if err != nil || got2 != "abc" {
+		t.Errorf("grouped chain = %v, err = %v, want %q", got2, err, "abc")
 	}
 }

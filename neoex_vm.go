@@ -650,6 +650,32 @@ func runNeoVMGeneral(bc *NeoBytecode, ctx Context) (any, error) {
 			res := buf.String(); neoBufferPool.Put(buf)
 			sp++; if sp >= 64 { return nil, fmt.Errorf("NeoVM stack overflow") }
 			stack[sp] = Value{Type: ValString, Str: res}
+		case NeoOpConcat2:
+			r := stack[sp]; sp--; l := &stack[sp]
+			var s1, s2 string
+			if l.Type == ValString { s1 = l.Str } else { s1 = fmt.Sprintf("%v", l.ToInterface()) }
+			if r.Type == ValString { s2 = r.Str } else { s2 = fmt.Sprintf("%v", r.ToInterface()) }
+			*l = Value{Type: ValString, Str: s1 + s2}
+		case NeoOpConcatGC:
+			gIdx := inst.Arg >> 16; cIdx := inst.Arg & 0xFFFF; sp++
+			if sp >= 64 { return nil, fmt.Errorf("NeoVM stack overflow") }
+			name := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(gIdx)*valSize)).Str
+			cv := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(cIdx)*valSize))
+			val, _ := ctx.Get(name)
+			var s1, s2 string
+			if s, ok := val.(string); ok { s1 = s } else { s1 = fmt.Sprintf("%v", val) }
+			if cv.Type == ValString { s2 = cv.Str } else { s2 = fmt.Sprintf("%v", cv.ToInterface()) }
+			stack[sp] = Value{Type: ValString, Str: s1 + s2}
+		case NeoOpConcatCG:
+			gIdx := inst.Arg >> 16; cIdx := inst.Arg & 0xFFFF; sp++
+			if sp >= 64 { return nil, fmt.Errorf("NeoVM stack overflow") }
+			name := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(gIdx)*valSize)).Str
+			cv := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(cIdx)*valSize))
+			val, _ := ctx.Get(name)
+			var s1, s2 string
+			if cv.Type == ValString { s1 = cv.Str } else { s1 = fmt.Sprintf("%v", cv.ToInterface()) }
+			if s, ok := val.(string); ok { s2 = s } else { s2 = fmt.Sprintf("%v", val) }
+			stack[sp] = Value{Type: ValString, Str: s1 + s2}
 		case NeoOpCall:
 			nameIdx := inst.Arg & 0xFFFF; numArgs := int(inst.Arg >> 16)
 			name := (*Value)(unsafe.Add(unsafe.Pointer(pConsts), uintptr(nameIdx)*valSize)).Str
