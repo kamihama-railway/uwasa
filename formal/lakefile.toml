@@ -1,0 +1,6 @@
+name = "uwasa_formal"
+version = "0.1.0"
+defaultTargets = ["UWasaVM"]
+
+[[lean_lib]]
+name = "UWasaVM"
