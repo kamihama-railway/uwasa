@@ -28,6 +28,11 @@ func TestNeoExVM(t *testing.T) {
 		{"10 - a", map[string]any{"a": int64(3)}, int64(7)},
 		{"10 / a", map[string]any{"a": int64(2)}, int64(5)},
 		{"\"a\" + b", map[string]any{"b": "b"}, "ab"},
+		{`a != 0`, map[string]any{"a": int64(1)}, true},
+		{`a != 0`, map[string]any{"a": int64(0)}, false},
+		{`"a" != "b"`, nil, true},
+		{`1 != 1.0`, nil, false},
+		{`if a != 0 is "yes" else is "no"`, map[string]any{"a": int64(1)}, "yes"},
 	}
 
 	for _, tt := range tests {

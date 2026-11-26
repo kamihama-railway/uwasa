@@ -66,6 +66,9 @@ func RunNeoVMWithMap(bc *NeoBytecode, vars map[string]any) (any, error) {
 		case NeoOpEqual:
 			rv := stack[sp]; sp--; l := &stack[sp]
 			*l = Value{Type: ValBool, Num: boolToUint64(l.Equal(rv))}
+		case NeoOpNotEqual:
+			rv := stack[sp]; sp--; l := &stack[sp]
+			*l = Value{Type: ValBool, Num: boolToUint64(!l.Equal(rv))}
 		case NeoOpGreater:
 			rv := stack[sp]; sp--; l := &stack[sp]
 			*l = Value{Type: ValBool, Num: boolToUint64(l.Greater(rv))}
@@ -437,6 +440,9 @@ func runNeoVMGeneral(bc *NeoBytecode, ctx Context) (any, error) {
 		case NeoOpEqual:
 			rv := stack[sp]; sp--; l := &stack[sp]
 			*l = Value{Type: ValBool, Num: boolToUint64(l.Equal(rv))}
+		case NeoOpNotEqual:
+			rv := stack[sp]; sp--; l := &stack[sp]
+			*l = Value{Type: ValBool, Num: boolToUint64(!l.Equal(rv))}
 		case NeoOpGreater:
 			rv := stack[sp]; sp--; l := &stack[sp]
 			*l = Value{Type: ValBool, Num: boolToUint64(l.Greater(rv))}

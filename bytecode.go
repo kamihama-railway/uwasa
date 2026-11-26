@@ -44,6 +44,7 @@ const (
 	OpGetGlobalJumpIfTrue
 	OpConcat
 	OpConcatChain
+	OpNotEqual
 )
 
 func (o OpCode) String() string {
@@ -80,6 +81,7 @@ func (o OpCode) String() string {
 	case OpGetGlobalJumpIfTrue: return "GG JIT"
 	case OpConcat: return "CONCAT"
 	case OpConcatChain: return "CONCAT_CHAIN"
+	case OpNotEqual: return "NOT_EQUAL"
 	default: return fmt.Sprintf("UNKNOWN(%d)", o)
 	}
 }

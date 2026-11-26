@@ -31,6 +31,7 @@ const (
 	ROpCall
 	ROpConcat
 	ROpReturn
+	ROpNotEqual
 )
 
 func (o ROpCode) String() string {
@@ -58,6 +59,7 @@ func (o ROpCode) String() string {
 	case ROpCall: return "CALL"
 	case ROpConcat: return "CONCAT"
 	case ROpReturn: return "RET"
+	case ROpNotEqual: return "NE"
 	default: return fmt.Sprintf("RUNKNOWN(%d)", o)
 	}
 }

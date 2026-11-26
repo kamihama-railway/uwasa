@@ -68,6 +68,7 @@ const (
 	NeoOpMulC
 	NeoOpDivC
 	NeoOpReturn // New for NeoEx to signal end of execution if needed
+	NeoOpNotEqual
 )
 
 func (o NeoOpCode) String() string {
@@ -132,6 +133,7 @@ func (o NeoOpCode) String() string {
 	case NeoOpMulC: return "MULC"
 	case NeoOpDivC: return "DIVC"
 	case NeoOpReturn: return "RET"
+	case NeoOpNotEqual: return "NOT_EQUAL"
 	default: return fmt.Sprintf("NEO_UNKNOWN(%d)", o)
 	}
 }

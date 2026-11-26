@@ -28,6 +28,7 @@ const (
 	TokenGe        // >=
 	TokenLe        // <=
 	TokenEq        // ==
+	TokenNotEq     // !=
 	TokenAnd       // &&
 	TokenOr        // ||
 	TokenIllegal   // illegal
@@ -153,7 +154,12 @@ func (l *Lexer) NextToken() Token {
 	case ',':
 		tok = Token{Type: TokenComma, Literal: ","}
 	case '!':
-		tok = Token{Type: TokenBang, Literal: "!"}
+		if l.peekChar() == '=' {
+			l.readChar()
+			tok = Token{Type: TokenNotEq, Literal: "!="}
+		} else {
+			tok = Token{Type: TokenBang, Literal: "!"}
+		}
 	case '"':
 		tok.Type = TokenString
 		tok.Literal = l.readString()
@@ -254,6 +260,7 @@ func (t TokenType) String() string {
 	case TokenGe: return ">="
 	case TokenLe: return "<="
 	case TokenEq: return "=="
+	case TokenNotEq: return "!="
 	case TokenAnd: return "&&"
 	case TokenOr: return "||"
 	case TokenIllegal: return "ILLEGAL"

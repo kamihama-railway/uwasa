@@ -133,6 +133,12 @@ func evalInfixExpression(operator string, left, right any) (any, error) {
 		return evalArithmetic(operator, left, right)
 	case "==", ">", "<", ">=", "<=":
 		return evalComparison(operator, left, right)
+	case "!=":
+		res, err := evalComparison("==", left, right)
+		if err != nil { return nil, err }
+		b, ok := res.(bool)
+		if !ok { return nil, fmt.Errorf("invalid comparison: %T != %T", left, right) }
+		return boolToAny(!b), nil
 	}
 	return nil, fmt.Errorf("unknown operator: %T %s %T", left, operator, right)
 }

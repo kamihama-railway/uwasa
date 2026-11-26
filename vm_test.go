@@ -38,6 +38,11 @@ func TestVM(t *testing.T) {
 		{"-a", map[string]any{"a": int64(5)}, int64(-5)},
 		{`s1 + " " + s2 + " " + s3`, map[string]any{"s1": "the", "s2": "quick", "s3": "brown"}, "the quick brown"},
 		{`1 + " " + 2`, nil, float64(3)},
+		{`a != 0`, map[string]any{"a": int64(1)}, true},
+		{`a != 0`, map[string]any{"a": int64(0)}, false},
+		{`"a" != "b"`, nil, true},
+		{`1 != 1.0`, nil, false},
+		{`if a != 0 is "yes" else is "no"`, map[string]any{"a": int64(1)}, "yes"},
 	}
 
 	for _, tt := range tests {

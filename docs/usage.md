@@ -91,9 +91,9 @@ func main() {
 ```go
 type MyContext struct {}
 
-func (m *MyContext) Get(name string) any {
-    // 自定义获取逻辑
-    return 42
+func (m *MyContext) Get(name string) (any, bool) {
+    // 自定义获取逻辑；第二个返回值表示变量是否存在
+    return 42, true
 }
 
 func (m *MyContext) Set(name string, value any) error {

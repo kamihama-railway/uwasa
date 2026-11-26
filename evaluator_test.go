@@ -24,6 +24,10 @@ func TestEvaluator(t *testing.T) {
 		{`if (1 == 0) || (1 == 0) is "ok" else is "no"`, nil, "no"},
 		{`is_active = true`, map[string]any{"is_active": false}, true},
 		{`is_active = false`, map[string]any{"is_active": true}, false},
+		{`a != 0`, map[string]any{"a": int64(1)}, true},
+		{`a != 0`, map[string]any{"a": int64(0)}, false},
+		{`"a" != "b"`, nil, true},
+		{`1 != 1.0`, nil, false},
 	}
 
 	for i, tt := range tests {

@@ -179,6 +179,7 @@ func (c *RegisterCompiler) walk(node Node, reg int) (int, error) {
 		case "/": op = ROpDiv
 		case "%": op = ROpMod
 		case "==": op = ROpEqual
+		case "!=": op = ROpNotEqual
 		case ">": op = ROpGreater
 		case "<": op = ROpLess
 		case ">=": op = ROpGreaterEqual

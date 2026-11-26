@@ -31,7 +31,7 @@ func getPrecedence(t TokenType) int {
 		return OR
 	case TokenAnd:
 		return AND
-	case TokenEq:
+	case TokenEq, TokenNotEq:
 		return EQUALS
 	case TokenGt, TokenLt, TokenGe, TokenLe:
 		return LESSGREATER
@@ -80,6 +80,7 @@ var parserPool = sync.Pool{
 		p.registerInfix(TokenOr, p.parseInfixExpression)
 		p.registerInfix(TokenAnd, p.parseInfixExpression)
 		p.registerInfix(TokenEq, p.parseInfixExpression)
+		p.registerInfix(TokenNotEq, p.parseInfixExpression)
 		p.registerInfix(TokenGt, p.parseInfixExpression)
 		p.registerInfix(TokenLt, p.parseInfixExpression)
 		p.registerInfix(TokenGe, p.parseInfixExpression)

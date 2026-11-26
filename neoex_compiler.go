@@ -155,7 +155,7 @@ func (c *NeoCompiler) getPrefixFn(t TokenType) func() (compilationValue, error) 
 func (c *NeoCompiler) getInfixFn(t TokenType) func(compilationValue) (compilationValue, error) {
 	switch t {
 	case TokenPlus, TokenMinus, TokenAsterisk, TokenSlash, TokenPercent,
-		TokenEq, TokenGt, TokenLt, TokenGe, TokenLe, TokenAnd, TokenOr:
+		TokenEq, TokenNotEq, TokenGt, TokenLt, TokenGe, TokenLe, TokenAnd, TokenOr:
 		return c.parseInfixExpression
 	case TokenAssign:
 		return c.parseAssignExpression
@@ -399,6 +399,7 @@ func (c *NeoCompiler) parseInfixExpression(left compilationValue) (compilationVa
 	case "/": c.emit(NeoOpDiv, 0)
 	case "%": c.emit(NeoOpMod, 0)
 	case "==": c.emit(NeoOpEqual, 0)
+	case "!=": c.emit(NeoOpNotEqual, 0)
 	case ">": c.emit(NeoOpGreater, 0)
 	case "<": c.emit(NeoOpLess, 0)
 	case ">=": c.emit(NeoOpGreaterEqual, 0)
@@ -442,6 +443,7 @@ func (c *NeoCompiler) foldInfix(l, r Value, op string) (Value, bool) {
 		if r.Type == ValInt && r.Num == 0 { c.errors = append(c.errors, "division by zero"); return Value{}, false }
 		if l.Type == ValInt && r.Type == ValInt { return Value{Type: ValInt, Num: l.Num % r.Num}, true }
 	case "==": return Value{Type: ValBool, Num: boolToUint64(c.compare(l, r) == 0)}, true
+	case "!=": return Value{Type: ValBool, Num: boolToUint64(c.compare(l, r) != 0)}, true
 	case ">": return Value{Type: ValBool, Num: boolToUint64(c.compare(l, r) > 0)}, true
 	case "<": return Value{Type: ValBool, Num: boolToUint64(c.compare(l, r) < 0)}, true
 	case ">=": return Value{Type: ValBool, Num: boolToUint64(c.compare(l, r) >= 0)}, true
@@ -717,6 +719,7 @@ func opToString(op NeoOpCode) string {
 	case NeoOpMul: return "*"
 	case NeoOpDiv: return "/"
 	case NeoOpEqual: return "=="
+	case NeoOpNotEqual: return "!="
 	case NeoOpGreater: return ">"
 	case NeoOpLess: return "<"
 	case NeoOpGreaterEqual: return ">="

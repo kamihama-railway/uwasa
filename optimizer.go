@@ -85,6 +85,12 @@ func Fold(node Node) Node {
 				}
 				lv, rv := getFloatValues(left, right)
 				return &BooleanLiteral{Value: lv == rv}
+			case "!=":
+				if left.IsInt && right.IsInt {
+					return &BooleanLiteral{Value: left.Int64Value != right.Int64Value}
+				}
+				lv, rv := getFloatValues(left, right)
+				return &BooleanLiteral{Value: lv != rv}
 			case ">":
 				if left.IsInt && right.IsInt {
 					return &BooleanLiteral{Value: left.Int64Value > right.Int64Value}
@@ -141,6 +147,9 @@ func Fold(node Node) Node {
 
 		if okLB && okRB && n.Operator == "==" {
 			return &BooleanLiteral{Value: leftB.Value == rightB.Value}
+		}
+		if okLB && okRB && n.Operator == "!=" {
+			return &BooleanLiteral{Value: leftB.Value != rightB.Value}
 		}
 
 	case *IfExpression:

@@ -35,6 +35,10 @@ func TestRegisterVM(t *testing.T) {
 		{"a > 10 || b < 5", map[string]any{"a": int64(5), "b": int64(10)}, false},
 		{"!a", map[string]any{"a": true}, false},
 		{"!a", map[string]any{"a": false}, true},
+		{"a != 0", map[string]any{"a": int64(1)}, true},
+		{"a != 0", map[string]any{"a": int64(0)}, false},
+		{`"a" != "b"`, nil, true},
+		{"1 != 1.0", nil, false},
 		{"-a", map[string]any{"a": int64(5)}, int64(-5)},
 	}
 

@@ -424,3 +424,27 @@ func TestLexerChineseMixedIdent(t *testing.T) {
 	}
 	lexerPool.Put(l)
 }
+
+func TestLexerNotEqual(t *testing.T) {
+	input := `a != b !c`
+	tests := []struct {
+		expectedType    TokenType
+		expectedLiteral string
+	}{
+		{TokenIdent, "a"},
+		{TokenNotEq, "!="},
+		{TokenIdent, "b"},
+		{TokenBang, "!"},
+		{TokenIdent, "c"},
+		{TokenEOF, ""},
+	}
+	l := NewLexer(input)
+	for i, tt := range tests {
+		tok := l.NextToken()
+		if tok.Type != tt.expectedType || tok.Literal != tt.expectedLiteral {
+			t.Fatalf("tests[%d] - got (%q, %q), want (%q, %q)",
+				i, tok.Type, tok.Literal, tt.expectedType, tt.expectedLiteral)
+		}
+	}
+	lexerPool.Put(l)
+}

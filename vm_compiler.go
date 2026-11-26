@@ -370,6 +370,7 @@ func (c *VMCompiler) walk(node Node) error {
 		case "/": c.emit(OpDiv, 0)
 		case "%": c.emit(OpMod, 0)
 		case "==": c.emit(OpEqual, 0)
+		case "!=": c.emit(OpNotEqual, 0)
 		case ">": c.emit(OpGreater, 0)
 		case "<": c.emit(OpLess, 0)
 		case ">=": c.emit(OpGreaterEqual, 0)
